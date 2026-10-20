@@ -123,7 +123,7 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-si
   <div class="brand"><svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#111111"/><rect x="8.00" y="8.00" width="13.89" height="4.32" fill="#F5F5F3"/><rect x="13.77" y="17.84" width="18.23" height="4.32" fill="#F5F5F3"/><rect x="8.00" y="27.68" width="9.57" height="4.32" fill="#F5F5F3"/></svg>Hojas Studio · دليل الاستخدام</div>
   <h1>منتج مقطعك مع <span>Claude</span>، وعدّل لمساتك على التايم لاين</h1>
   <p class="lead">هذا الدليل يمشي معك من الصفر: كيف تنزّل الأداة وتثبّتها، وكيف تمنتج أول مقطع، ووش تسوي كل أداة داخل الاستوديو.</p>
-  <div class="meta"><span>النسخة <b>4.2</b></span><span>ويندوز وماك</span><span>يشتغل على جهازك بالكامل</span><span>صاحب الأداة <b>هوجاس</b></span></div>
+  <div class="meta"><span>النسخة <b>4.33</b></span><span>ويندوز وماك</span><span>يشتغل على جهازك بالكامل</span><span>صاحب الأداة <b>هوجاس</b></span></div>
 </header>
 
 <nav class="toc" aria-label="المحتويات">
@@ -179,18 +179,26 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-si
 <section id="install">
   <div class="kicker">03</div>
   <h2>التثبيت خطوة بخطوة</h2>
+  <p>الطريقة المنصوح فيها: <b>البلقن</b>. تثبّته مرة وحدة، وكل نسخة جديدة توصلك لحالها.</p>
   <ol class="steps">
-    <li><div><b>ثبّت Claude Code وسجّل دخول</b><p>من الصفحة الرسمية. لو هو عندك من قبل تخطّ هذي الخطوة. (OpenCode يشتغل بعد، شوف تحت.)</p></div></li>
-    <li><div><b>افتح Claude Code والصق هذا السطر</b><span class="say" dir="ltr" style="text-align:left">Install this skill: git clone https://github.com/rakaga66/hojas-studio ~/.claude/skills/hojas-studio</span><p>Claude ينسخ الأداة كاملة لمجلد السكلز. لو git مو موجود عندك يقول لك ويثبّته بموافقتك.</p></div></li>
+    <li><div><b>ثبّت Claude Code وسجّل دخول</b><p>من الصفحة الرسمية. لو هو عندك من قبل تخطّ هذي الخطوة.</p></div></li>
+    <li><div><b>أضف متجر Hojas</b><p>افتح Claude Code واكتب هذا الأمر واضغط Enter:</p><p dir="ltr" style="text-align:left"><code>/plugin marketplace add rakaga66/hojas-studio</code></p></div></li>
+    <li><div><b>ثبّت البلقن</b><p dir="ltr" style="text-align:left"><code>/plugin install hojas-studio@hojas</code></p></div></li>
+    <li><div><b>شغّل التحديث التلقائي (مرة وحدة)</b><p>اكتب <code>/plugin</code> ثم اختر <b>Marketplaces</b> ثم <b>hojas</b> ثم <b>Enable auto-update</b>. من بعدها كل نسخة جديدة تنزل لحالها، والمكتبة تنتقل لها أول ما تفتح Claude Code. مشاريعك وإعداداتك محفوظة في <code>~/.hojas-studio</code> والتحديث ما يلمسها.</p></div></li>
     <li><div><b>اقفل Claude Code وافتحه من جديد</b><p>عشان يتعرّف على الأداة.</p></div></li>
-    <li><div><b>خلّ Claude يفحص جهازك</b><span class="say">افحص أدوات Hojas Studio</span><p>يقول لك وش موجود ووش ناقص. وافق على اللي يحتاجه، وهو يثبّته ويتأكد إنه اشتغل.</p></div></li>
+    <li><div><b>خلّ Claude يفحص جهازك</b><span class="say">افحص أدوات Hojas Studio</span><p>يقول لك وش موجود ووش ناقص (ffmpeg وPython مع Whisper وNode وكروم، وGit for Windows على ويندوز). وافق على اللي يحتاجه، وهو يثبّته ويتأكد إنه اشتغل.</p></div></li>
+    <li><div><b>ابدأ أول مقطع</b><span class="say">منتج هذا المقطع لتيك توك: C:\Users\you\Videos\clip.mp4</span></div></li>
   </ol>
+  <h3>طريقة ثانية: سكل بـ git</h3>
+  <p>لو تبيها سكل عادي بدل البلقن، الصق هذا السطر في Claude Code:</p>
+  <span class="say" dir="ltr" style="text-align:left">Install this skill: git clone https://github.com/rakaga66/hojas-studio ~/.claude/skills/hojas-studio</span>
+  <p>هذي الطريقة ما تتحدّث لحالها: تحدّثها بنفسك (شوف «التحديث والإزالة» تحت).</p>
   <h3>من الطرفية بنفسك</h3>
   <p>ماك ولينكس:</p><p dir="ltr" style="text-align:left"><code style="white-space:normal;word-break:break-all">git clone https://github.com/rakaga66/hojas-studio ~/.claude/skills/hojas-studio</code></p>
   <p>ويندوز (PowerShell):</p><p dir="ltr" style="text-align:left"><code style="white-space:normal;word-break:break-all">git clone https://github.com/rakaga66/hojas-studio "$HOME\.claude\skills\hojas-studio"</code></p>
   <h3>بدون git (الملف المضغوط)</h3>
   <p>نزّل الملف المضغوط من الموقع، فك الضغط في <code>Documents</code>، ودبل كلك على <code>install.bat</code> (ماك: <code>bash install.sh</code>). لو طلع تحذير ويندوز اضغط «More info» ثم «Run anyway». لازم تطلع رسالة <code>Hojas Studio skill installed</code>، ولا تنقل المجلد بعدها.</p>
-  <div class="note"><b>OpenCode؟</b> يقرأ نفس مجلد <code>~/.claude/skills</code>، فنفس السطر يكفي. القص والتفريغ والكابشن والاستوديو تشتغل، وزر «نفّذ» يكتشفه لحاله (تجريبي). اللي يحتاج Claude in Chrome (التوليد من حساباتك والنشر) يشتغل مع Claude Code بس.</div>
+  <div class="note"><b>OpenCode؟</b> البلقن لـ Claude Code بس. OpenCode يقرأ مجلد <code>~/.claude/skills</code>، فاستخدم طريقة السكل بـ git فوق. القص والتفريغ والكابشن والاستوديو تشتغل، وزر «نفّذ» يكتشفه لحاله (تجريبي). اللي يحتاج Claude in Chrome (التوليد من حساباتك والنشر) يشتغل مع Claude Code بس.</div>
 </section>
 
 <section id="first">
@@ -480,12 +488,17 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-si
   <div class="kicker">14</div>
   <h2>التحديث والإزالة</h2>
   <h3>التحديث</h3>
-  <p>لو ثبّتها بـ git: قل لـ Claude <span class="say">حدّث Hojas Studio</span> (يشغّل <code>python hs.py update</code>). لو ثبّتها بالملف المضغوط: نزّل الجديد وفك ضغطه مكان القديم وشغّل <code>install.bat</code> مرة ثانية. مشاريعك ما تتأثر، وتلقى وش الجديد في ملف <code>CHANGELOG.md</code>.</p>
+  <p><b>البلقن:</b> لو شغّلت التحديث التلقائي ما تسوي شي، النسخة الجديدة توصلك لحالها والمكتبة تنتقل لها أول ما تفتح Claude Code (لو فيه تصدير شغّال، تنتظر للجلسة الجاية). تبي تحدّث الحين؟ اكتب <code dir="ltr">/plugin marketplace update hojas</code>، وبعدها اقفل Claude Code وافتحه.</p>
+  <p><b>سكل بـ git:</b> قل لـ Claude <span class="say">حدّث Hojas Studio</span> (يشغّل <code>python hs.py update</code>).</p>
+  <p><b>الملف المضغوط:</b> نزّل الجديد وفك ضغطه مكان القديم وشغّل <code>install.bat</code> مرة ثانية.</p>
+  <p>بكل الطرق مشاريعك ما تتأثر، وتلقى وش الجديد في صفحة <a href="https://hojas.store/updates" target="_blank" rel="noopener">التحديثات</a>.</p>
   <h3>الإزالة</h3>
-  <p>احذف مجلد <code>.claude\skills\hojas-studio</code> من مجلد المستخدم (ولو ثبّتها بالملف المضغوط احذف مجلدها بعد). أصواتك وإعداداتك في <code>.hojas-studio</code> بنفس المكان لو تبي تمسحها بعد.</p>
+  <p><b>البلقن:</b> اكتب في Claude Code <code dir="ltr">/plugin uninstall hojas-studio@hojas</code>.</p>
+  <p><b>سكل بـ git أو الملف المضغوط:</b> احذف مجلد <code>.claude\skills\hojas-studio</code> من مجلد المستخدم (ولو ثبّتها بالملف المضغوط احذف مجلدها بعد).</p>
+  <p>أصواتك وإعداداتك ومشاريعك في <code>.hojas-studio</code> بمجلد المستخدم، احذفه لو تبي تمسحها بعد.</p>
 </section>
 
-<footer><span>Hojas Studio 4.2 · صاحب الأداة هوجاس</span><span>يعمل مع Claude Code وOpenCode</span></footer>
+<footer><span>Hojas Studio 4.33 · صاحب الأداة هوجاس</span><span>يعمل مع Claude Code وOpenCode</span></footer>
 </div>
 
 </body>

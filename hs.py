@@ -80,7 +80,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.33"
+VERSION = "4.34"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -1865,7 +1865,7 @@ def sfx_all():
 TOOLS = [
     ("ffmpeg", "يقص الفيديو ويركّب الصوت والصورة ويطلّع الملف النهائي", "برنامج مفتوح المصدر معروف (ffmpeg.org) · 90 ميقا تقريباً", lambda: bool(shutil.which("ffmpeg"))),
     ("Python + whisper", "يفرّغ كلامك لنص بتوقيت كل كلمة عشان الكابشن", "مكتبة OpenAI المفتوحة (openai-whisper) وموديلها ينزل مرة وحدة 1.4 قيقا · يشتغل على جهازك وصوتك ما ينرفع لأي مكان", lambda: importlib.util.find_spec("whisper") is not None),
-    ("Node.js + puppeteer-core", "يشغّل متصفح كروم بدون نافذة عشان يرسم الكابشن والكروت فريم فريم", "Node من nodejs.org و puppeteer-core من قوقل (مكتبة تحكم بالمتصفح) · ما يفتح مواقع ولا يدخل حساباتك", lambda: bool(shutil.which("node"))),
+    ("Node.js + puppeteer-core", "يشغّل متصفح كروم بدون نافذة عشان يرسم الكابشن والكروت فريم فريم", "Node من nodejs.org و puppeteer-core من قوقل (مكتبة تحكم بالمتصفح) · ما يفتح مواقع ولا يدخل حساباتك", lambda: bool(shutil.which("node")) and deps_ok()),
     ("Google Chrome أو Edge", "نفس المتصفح اللي عندك، يُستخدم كمحرّك رسم فقط", "ما يتثبّت شي جديد لو عندك واحد منهم", lambda: True),
     ("Git for Windows", "على ويندوز فقط: يشغّل سكربتات التجميع (bash)", "من git-scm.com", lambda: os.name != "nt" or bool(shutil.which("bash"))),
 ]
@@ -3523,6 +3523,10 @@ def cmd_selftest(work=None, engine=None):
         finally: shutil.rmtree(td, ignore_errors=True)
         chk("4.33: حفظ الملفات ما يطلع «Access is denied» لو كتابتين وقراءات بنفس اللحظة", not er_ and not left)
     except Exception as e: chk("4.33", False, str(e)[:240])
+    try:   # 4.34
+        me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); rf_ = open(os.path.join(find_engine(None) or "", "scripts", "04_render_frames.js"), encoding="utf-8").read()
+        chk("4.34: فحص الأدوات يكتشف مكتبة التصدير، و«hs deps» يثبّتها بـ ~/.hojas-studio", callable(cmd_deps) and 'chk("مكتبة التصدير (puppeteer-core)"' in me_ and "hs deps" in rf_ and "hs deps" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+    except Exception as e: chk("4.34", False, str(e)[:240])
     try:   # 4.26: حارس: ولا متغيّر داخل السيرفر يغطّي D (مجلد الكاش) أو P أو S، كان يخلّي الفريمات والصور المصغّرة ما تطلع
         me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
         bad_ = [l.strip()[:60] for l in me_.split(chr(10)) if re.match(r"^ {16,}(D|P|S|base|work) = ", l)]
@@ -3861,6 +3865,9 @@ def cmd_doctor(engine):
     eng = find_engine(engine); chk("المحرّك (مجلد engine)", eng, "مجلد engine ناقص من مجلد السكل: نزّل السكل كامل من جديد")
     if eng: print("     " + eng); remember_engine(eng)
     for tool in ("ffmpeg", "ffprobe", "node"): chk(tool, shutil.which(tool), "ثبّته وأضفه للـPATH")
+    try: deps_keep()
+    except Exception: pass
+    chk("مكتبة التصدير (puppeteer-core)", deps_ok(), "بعد موافقة المستخدم: hs deps (ينزّلها مرة وحدة لـ ~/.hojas-studio، 8 ميقا تقريباً، وتبقى مع كل تحديث)")   # 4.34
     fix_windows_path()
     if os.name == "nt": chk("Git Bash", shutil.which("bash"), "ثبّت Git for Windows")
     chk("ملفات الاستوديو", all(os.path.exists(os.path.join(HERE, f)) for f in ("studio.html", "app.js", "i18n.js", "ext.js", "qr.js", "review.html", "AGENT.md")), "أعد نسخ مجلد hojas-studio")
@@ -6767,6 +6774,14 @@ def deps_keep():
         if os.path.isdir(os.path.join(c, "puppeteer-core")):
             shutil.copytree(c, deps_dir(), dirs_exist_ok=True); return True
     return False
+def cmd_deps(args):
+    """hs deps: يثبّت puppeteer-core (يتحكم بكروم وقت التصدير) مرة وحدة بـ ~/.hojas-studio. لا تشغّله إلا بموافقة المستخدم."""
+    if deps_keep(): print("مكتبة التصدير جاهزة: " + deps_dir()); return
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not npm: sys.exit("ما لقيت npm: ثبّت Node.js من nodejs.org أول")
+    os.makedirs(HOME_CFG, exist_ok=True)
+    r = subprocess.run([npm, "install", "--prefix", HOME_CFG, "puppeteer-core@25", "--no-audit", "--no-fund", "--loglevel=error"])
+    print("مكتبة التصدير جاهزة" if deps_ok() else "ما انثبّتت (رمز %s): جرّب يدوياً: npm install --prefix \"%s\" puppeteer-core" % (r.returncode, HOME_CFG))
 def cmd_sync(args):
     """يشتغل مع بداية كل جلسة Claude Code (من البلقن): يسجّل أحدث نسخة، ولو المكتبة شغّالة بنسخة أقدم يعيد تشغيلها من الجديدة."""
     os.makedirs(HOME_CFG, exist_ok=True)
@@ -7366,6 +7381,7 @@ def main():
     if cmd == "doctor": sys.exit(0 if cmd_doctor(engine) else 1)
     if cmd == "platform": return cmd_platform(a[1:])
     if cmd == "tools": print(tools_text()); return
+    if cmd == "deps": return cmd_deps(a[1:])
     if cmd == "notify": return cmd_notify(a[1:])
     if cmd == "style": return cmd_style(a[1:])
     if cmd == "sound": return cmd_sound(a[1:])

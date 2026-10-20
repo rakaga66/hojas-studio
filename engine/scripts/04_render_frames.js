@@ -16,7 +16,7 @@ function resolvePuppeteer(){
       path.join(require('os').homedir(),'.hojas-studio','node_modules','puppeteer-core')]) {   /* 4.31: برّا البلقن، ما يروح مع التحديث */
     if(!p) continue; try{ return require(p); }catch(e){}
   }
-  throw new Error('ما لقيت puppeteer-core — ثبّته: npm i puppeteer-core');
+  throw new Error('ما لقيت مكتبة التصدير puppeteer-core: قل لـ Claude «ثبّت مكتبة التصدير» (يشغّل hs deps بعد موافقتك)');
 }
 /* ── كروم: يلقاه على ويندوز وماك ولينكس (مضاف) ── */
 const {pathToFileURL}=require('url');

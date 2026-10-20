@@ -121,7 +121,7 @@
 
    تبيه سكل عادي؟ `git clone https://github.com/rakaga66/hojas-studio ~/.claude/skills/hojas-studio` يشتغل بعد، وتحدّثه بـ«حدّث Hojas Studio».
 3. اقفل Claude Code وافتحه، واكتب له: «افحص أدوات Hojas Studio».
-   يقول لك وش الناقص (ffmpeg، Python مع Whisper، Node، Chrome، وعلى ويندوز Git for Windows)، ليش يحتاجه ومن وين ينزل، وما يثبّت شي إلا بموافقتك.
+   يقول لك وش الناقص (ffmpeg، Python مع Whisper، Node ومكتبة التصدير، Chrome، وعلى ويندوز Git for Windows)، ليش يحتاجه ومن وين ينزل، وما يثبّت شي إلا بموافقتك.
 4. وبعدها: «منتج هذا المقطع لتيك توك» مع مسار الفيديو.
 
 **التحديث:** البلقن يتحدّث لحاله. السكل العادي: قل له «حدّث Hojas Studio».

@@ -332,7 +332,9 @@ mark{background:rgba(217,119,87,.35);color:#fff;border-radius:4px;padding:0 2px}
   .sheet{align-items:center}
   .sheet .in{border-radius:26px;width:min(620px,94vw);padding:22px 26px 24px}
   .sheet .grab{display:none}
-  .opts3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .opts3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.opts3.four{grid-template-columns:repeat(2,1fr)}.opts3.four .opt{min-height:118px}
+.idc{display:inline-flex;width:24px;height:13px;border-radius:4px;overflow:hidden;vertical-align:-2px;margin-inline-end:6px;border:1px solid rgba(255,255,255,.25)}.idc u{flex:1}#nIdName{width:100%;background:var(--s1);color:var(--tx);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;font:inherit;outline:none;box-sizing:border-box}
+.idfs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.idfs span{font-size:12px;opacity:.8;border:1px solid rgba(255,255,255,.2);border-radius:99px;padding:3px 9px}
   .opts3 .opt{flex-direction:column;align-items:flex-start;margin:0;min-height:150px}
   #toast{bottom:30px}
   /* اختيار اللقطات بعمودين */
@@ -415,7 +417,8 @@ const TX={
  noSecure:['عشان المايك يشتغل من الجوال شغّل بالكمبيوتر:','For the mic on your phone run:'],
  newP:['مشروع جديد','New project'], newTitle:['مشروع جديد','New project'], srcLink:['رابط','Link'], srcFile:['ملف من جهازك','File'], linkPh:['الصق رابط تيك توك، يوتيوب، انستقرام…','Paste a TikTok, YouTube, Instagram… link'], paste:['الصق','Paste'],
  dropB:['اختر فيديو أو اسحبه هنا','Choose or drop a video'], dropS:['MP4 أو MOV','MP4 or MOV'], whatDo:['وش أسوي فيه؟','What should I do?'],
- mAuto:['Claude يمنتجه','Claude edits it'], mAutoS:['مونتاج كامل بأسلوبك، ويسألك قبل','Full edit in your style'],
+ mAuto:['Claude يمنتجه','Claude edits it'], mAutoS:['مونتاج كامل بأسلوبك، ويسألك قبل','Full edit in your style'], mMotion:['موشن جرافيك','Motion graphics'], mMotionS:['Claude يمنتجه والموشن أساسي: أرقام وكلمات وأيقونات تتحرك مع كلامك','Claude edits it with motion at the core'],
+ idQ:['الهوية','Identity'], idNone:['بدون','None'], idNew:['+ هوية جديدة','+ New identity'], idDraft:['مسودة','draft'], idName:['اسم الهوية (اسمك أو البراند)','Identity name (you or the brand)'], idTextPh:['اكتب لـ Claude كيف تبي هويتك: الألوان (مثلاً #E8202A)، الخط، الإحساس، وكلمة الدعوة','Tell Claude how you want your identity: colors (e.g. #E8202A), font, feel and call to action word'], idFiles:['ارفع ملف الهوية (شعار، دليل PDF، صور، خطوط، MD)','Upload brand files (logo, PDF guide, images, fonts, MD)'], idHintN:['Claude يصمم ملف هويتك (identity.md) مرة وحدة، وبعدها ينطبق لحاله على المونتاج العادي والموشن والبودكاست.','Claude writes your identity file (identity.md) once, then it applies to regular edits, motion and podcasts automatically.'], idHintS:['نفس الألوان والخطوط والدعوة بكل مقاطعك. تعدّلها بأي وقت: قل لـ Claude «عدّل هويتي».','Same colors, fonts and call to action in every clip. Edit any time by telling Claude.'], idNeed:['اكتب وصف الهوية أو ارفع ملف','Describe the identity or upload a file'],
  mMan:['أمنتجه بنفسي','I edit it myself'], mManS:['يقص السكتات ويكتب الكابشن، وتكمّل بيدك بالاستوديو','Silence cut + captions, then you edit'],
  mClips:['بودكاست','Podcast'], mClipsS:['من رابط يوتيوب أو فيديو طويل: يجيب لك النصوص أول وتختار، وينزّل بس اللي تختاره','From a YouTube link or long video: scripts first, you pick, and only your picks get downloaded'],
  podN:['كم ريل تبي؟','How many reels?'], podNHint:['يجيب لك ضعفها نصوص تختار منها (10 ← 20 نص)، وتقدر تقول «هات غيرها».','You get twice as many scripts to choose from (10 → 20), and you can ask for others.'],
@@ -616,20 +619,38 @@ function openAt(id,tt){ const g=((SR&&SR.items)||[]).find(x=>x.id===id); if(!g) 
 let PEND_SEEK=null;
 /* ── مشروع جديد ── */
 const NW={src:'link',mode:'clips',pick:'me',n:5,len:'30-60',file:null,tr:'ar',dub:'',host:false};
-function newSheet(){ NW.file=null; if(!DATA||(!DATA.claude&&NW.mode==='auto')) NW.mode=NW.src==='link'?'clips':'manual'; drawNew(); }
+function newSheet(){ NW.file=null; if(!DATA||(!DATA.claude&&(NW.mode==='auto'||NW.mode==='motion'))) NW.mode=NW.src==='link'?'clips':'manual'; drawNew(); idLoad(); }
+/* 4.37: الهوية بكل أنواع المشاريع: وحدة محفوظة، أو جديدة (وصف وملفات) وClaude يكتب identity.md مرة وحدة */
+let IDS=null;
+async function idLoad(){ try{ const r=await api('identity'); IDS=r.list||[]; if(NW.ident===undefined) NW.ident=(IDS.find(x=>x.default)||{}).slug||''; if($('#sheet').classList.contains('on')&&$('#nGo')) drawNew(); }catch(e){} }
+function idHtml(){ if(!IDS) return ''; const cur=NW.ident===undefined?'':NW.ident; let o='<h5>'+t('idQ')+'</h5><div class="chips">';
+  o+=IDS.map(x=>'<button class="chip'+(cur===x.slug?' on':'')+'" data-nid="'+esc(x.slug)+'"><span class="idc"><u style="background:'+esc(x.colors.bg)+'"></u><u style="background:'+esc(x.colors.acc)+'"></u></span>'+esc(x.name)+(x.default?' ★':'')+(x.draft?' <span class="tkb">'+t('idDraft')+'</span>':'')+'</button>').join('');
+  o+='<button class="chip'+(cur==='none'||(!cur&&!IDS.length)?' on':'')+'" data-nid="none">'+t('idNone')+'</button><button class="chip'+(cur==='__new'?' on':'')+'" data-nid="__new">'+t('idNew')+'</button></div>';
+  if(cur==='__new'){ NW.idKey=NW.idKey||('new-'+Date.now().toString(36)); const fs=NW.idFiles||[];
+    o+='<input id="nIdName" dir="auto" placeholder="'+esc(t('idName'))+'" value="'+esc(NW.idName||'')+'" style="margin-top:8px"><textarea id="nIdText" dir="auto" placeholder="'+esc(t('idTextPh'))+'" style="margin-top:8px">'+esc(NW.idText||'')+'</textarea>'
+      +'<label class="drop" style="margin-top:8px;min-height:0;padding:12px"><b>'+t('idFiles')+'</b><input type="file" id="nIdFile" multiple hidden accept="image/*,.pdf,.md,.txt,.ttf,.otf,.woff,.woff2,.svg,.json"></label>'+(fs.length?'<div class="idfs">'+fs.map(f=>'<span>✓ '+esc(f)+'</span>').join('')+'</div>':'')
+      +'<div class="hint2">'+t('idHintN')+'</div>'; }
+  else if(cur&&cur!=='none') o+='<div class="hint2">'+t('idHintS')+'</div>';
+  return o; }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-nid]'); if(!b) return; NW.ident=b.dataset.nid; drawNew(); });
+document.addEventListener('input',e=>{ if(e.target.id==='nIdName') NW.idName=e.target.value; if(e.target.id==='nIdText') NW.idText=e.target.value; });
+document.addEventListener('change',async e=>{ if(e.target.id!=='nIdFile') return; const fs=[...e.target.files]; for(const f of fs){ try{ const r=await fetch('/hub/api/identity_file?'+new URLSearchParams({name:NW.idKey,file:f.name}),{method:'POST',body:f}).then(x=>x.json()); if(r.ok) (NW.idFiles=NW.idFiles||[]).push(f.name); else toast(r.msg||t('failed')); }catch(_){ toast(t('failed')); } } drawNew(); });
+async function idResolve(){ if(NW.ident!=='__new') return NW.ident||''; if(!(NW.idText||'').trim()&&!(NW.idFiles||[]).length){ toast(t('idNeed')); return null; }
+  const r=await api('identity',{name:(NW.idName||'').trim(),text:NW.idText||'',key:NW.idKey,default:true}); if(!r.ok){ toast(r.msg||t('failed')); return null; } IDS=r.list||IDS; NW.ident=r.slug; NW.idFiles=[]; NW.idKey=''; NW.idText=''; return r.slug; }
 function drawNew(){ const y=DATA&&DATA.ytdlp, cl=DATA&&DATA.claude;
   let o='<h2 style="margin-bottom:14px">'+t('newTitle')+'</h2><div class="src2"><button data-nsrc="link" class="'+(NW.src==='link'?'on':'')+'">'+IC.link+t('srcLink')+'</button><button data-nsrc="file" class="'+(NW.src==='file'?'on':'')+'">'+IC.file+t('srcFile')+'</button></div>';
   if(NW.src==='link'){ o+='<div class="field"><input id="nUrl" inputmode="url" placeholder="'+esc(t('linkPh'))+'" value="'+esc(NW.url||'')+'"><button class="btn sm" id="nPaste">'+t('paste')+'</button></div><div class="sites"><span>TikTok</span><span>YouTube</span><span>Instagram</span><span>X</span><span>Snapchat</span><span>Twitch</span><span>+1000</span></div>';
     if(!y) o+='<div class="box">'+t('needY')+'<div style="margin-top:8px"><button class="btn sm y" id="nInstall">'+t('installY')+'</button></div></div>'; }
   else o+='<label class="drop" id="nDrop"><b>'+(NW.file?esc(NW.file.name):t('dropB'))+'</b>'+(NW.file?'<bdi dir="ltr">'+(NW.file.size/1e6).toFixed(0)+' MB</bdi>':t('dropS'))+'<input type="file" id="nFile" accept="video/*" hidden></label>';
-  o+='<h5>'+t('whatDo')+'</h5><div class="opts3">'+[['auto',IC.wand,'mAuto','mAutoS'],['manual',IC.hand,'mMan','mManS'],['clips',IC.scissors,'mClips','mClipsS']].map(([k,i,a,b])=>'<button class="opt'+(NW.mode===k?' on':'')+'" data-nmode="'+k+'">'+i+'<div><b>'+t(a)+(k==='auto'?' <span class="tkb">'+t('tokBadge')+'</span>':'')+(k==='clips'?' <span class="beta">beta</span>':'')+'</b><small>'+t(b)+'</small></div></button>').join('')+'</div>';
-  if(NW.mode==='auto'&&!cl) o+='<div class="box">'+t('noClaude')+'</div>';
+  o+='<h5>'+t('whatDo')+'</h5><div class="opts3 four">'+[['auto',IC.wand,'mAuto','mAutoS'],['motion',IC.spark,'mMotion','mMotionS'],['manual',IC.hand,'mMan','mManS'],['clips',IC.scissors,'mClips','mClipsS']].map(([k,i,a,b])=>'<button class="opt'+(NW.mode===k?' on':'')+'" data-nmode="'+k+'">'+i+'<div><b>'+t(a)+(k==='auto'||k==='motion'?' <span class="tkb">'+t('tokBadge')+'</span>':'')+(k==='clips'?' <span class="beta">beta</span>':'')+'</b><small>'+t(b)+'</small></div></button>').join('')+'</div>';
+  if((NW.mode==='auto'||NW.mode==='motion')&&!cl) o+='<div class="box">'+t('noClaude')+'</div>';
   if(NW.mode==='clips'){ o+='<h5>'+t('whoPick')+'</h5><div class="chips">'+[['claude','pClaude'],['me','pMe']].map(([k,l])=>'<button class="chip'+(NW.pick===k?' on':'')+'" data-npick="'+k+'">'+t(l)+(k==='claude'?' <span class="tkb">'+t('tokBadge')+'</span>':'')+'</button>').join('')+'</div>'
     +'<h5>'+t('podN')+'</h5><div class="chips">'+[3,5,8,10].map(n=>'<button class="chip'+(NW.n===n?' on':'')+'" data-nn="'+n+'">'+n+'</button>').join('')+'</div><div class="qhint">'+PODIC.n+'<span>'+t('podNHint')+'</span></div>'
     +'<h5>'+t('podTr')+'</h5><div class="chips">'+[['',t('none')],...PODL].map(([k,l])=>'<button class="chip'+(NW.tr===k?' on':'')+'" data-ntr="'+k+'">'+l+'</button>').join('')+'</div><div class="qhint">'+PODIC.tr+'<span>'+t('podTrHint')+'</span></div>'
     +'<h5>'+t('podDub')+'</h5><div class="chips">'+[['',t('none')],...PODL].map(([k,l])=>'<button class="chip'+(NW.dub===k?' on':'')+'" data-ndub="'+k+'">'+l+'</button>').join('')+'</div><div class="qhint">'+PODIC.dub+'<span>'+t('podDubHint')+'</span></div>'
     +'<h5>'+t('podHost')+'</h5><div class="chips"><button class="chip'+(NW.host?' on':'')+'" data-nhost="1">'+(HOST&&HOST.name?esc(HOST.name):'✓')+'</button><button class="chip'+(!NW.host?' on':'')+'" data-nhost="0">'+t('none')+'</button><input id="hostName" dir="auto" placeholder="'+esc(t('hostName'))+'" value="'+esc((HOST&&HOST.name)||'')+'" style="flex:1;min-width:120px"></div><div class="qhint">'+PODIC.host+'<span>'+t('podHostHint')+'</span></div>'
     +'<h5>'+t('howLong')+'</h5><div class="chips">'+[['15-30','lenS'],['30-60','lenM'],['60-90','lenL']].map(([k,l])=>'<button class="chip'+(NW.len===k?' on':'')+'" data-nlen="'+k+'">'+t(l)+'</button>').join('')+'</div>'; }
+  o+=idHtml();
   o+='<h5></h5><textarea id="nNote" dir="auto" placeholder="'+esc(t('notePh'))+'">'+esc(NW.note||'')+'</textarea>'+(NW.src==='link'?'<div class="hint2">'+t('rights')+'</div>':'')
    +'<div class="prog" id="nProg" style="display:none"><i></i></div><button class="btn y wide" id="nGo" style="margin-top:10px">'+t('start')+'</button>';
   const op=$('#sheet').classList.contains('on'); sheet(o); const u=$('#nUrl'); if(u){ u.oninput=()=>NW.url=u.value; if(DESK()&&!op) u.focus({preventScroll:true}); }   // 4.26: التركيز أول مرة بس، عشان الاختيار ما يرجّعك فوق $('#nNote').oninput=e=>NW.note=e.target.value;
@@ -638,11 +659,11 @@ function drawNew(){ const y=DATA&&DATA.ytdlp, cl=DATA&&DATA.claude;
   const ps=$('#nPaste'); if(ps) ps.onclick=async()=>{ try{ NW.url=await navigator.clipboard.readText(); drawNew(); }catch(e){ $('#nUrl').focus(); } };
   const ins=$('#nInstall'); if(ins) ins.onclick=async()=>{ ins.disabled=true; ins.textContent=t('installing'); const r=await api('ytdlp_install',{}); if(r.ok){ DATA.ytdlp=true; toast(t('done')); drawNew(); } else { ins.disabled=false; ins.textContent=t('installY'); toast((r.out||t('failed')).slice(-160)); } };
   $('#nGo').onclick=startNew; }
-async function startNew(){ if(NW.mode==='auto'&&!(await tokenGo('auto','big'))) return; if(NW.mode==='clips'&&NW.pick==='claude'&&!(await tokenGo('pick','big'))) return; const b=$('#nGo'), extra={mode:NW.mode,pick:NW.pick,n:NW.n,len:NW.mode==='clips'?NW.len:'',note:NW.note||'',tr:NW.tr||'',dub:NW.dub||'',host:NW.host?1:0};
+async function startNew(){ if((NW.mode==='auto'||NW.mode==='motion')&&!(await tokenGo('auto','big'))) return; if(NW.mode==='clips'&&NW.pick==='claude'&&!(await tokenGo('pick','big'))) return; const idv=await idResolve(); if(idv===null) return; const b=$('#nGo'), extra={mode:NW.mode,pick:NW.pick,n:NW.n,len:NW.mode==='clips'?NW.len:'',note:NW.note||'',tr:NW.tr||'',dub:NW.dub||'',host:NW.host?1:0,identity:idv};
   if(NW.src==='link'){ const url=(NW.url||'').trim(); if(!/^https?:\/\//.test(url)){ $('#nUrl').focus(); toast(t('linkPh')); return; } b.disabled=true;
     const r=await api('link',{url,...extra}); b.disabled=false; if(r.ok){ toast(t('started')); closeSheet(); NW.url=''; NW.note=''; TAB='lib'; load(); } else if(r.need==='ytdlp'){ DATA.ytdlp=false; drawNew(); } else toast(r.msg||t('failed')); return; }
   const f=NW.file; if(!f){ $('#nDrop').click(); return; } b.disabled=true; const x=new XMLHttpRequest(); $('#nProg').style.display='block';
-  x.open('POST','/hub/api/upload?'+new URLSearchParams({file:f.name,mode:extra.mode,pick:extra.pick,n:extra.n,len:extra.len,note:extra.note,tr:extra.tr,dub:extra.dub,host:extra.host}));
+  x.open('POST','/hub/api/upload?'+new URLSearchParams({file:f.name,mode:extra.mode,pick:extra.pick,n:extra.n,len:extra.len,note:extra.note,tr:extra.tr,dub:extra.dub,host:extra.host,identity:extra.identity||''}));
   x.upload.onprogress=e=>{ if(e.lengthComputable){ $('#nProg i').style.width=(e.loaded/e.total*100)+'%'; b.textContent=t('uploading',Math.round(e.loaded/e.total*100)); } };
   x.onload=()=>{ try{ const r=JSON.parse(x.responseText); toast(r.ok?t('started'):(r.msg||t('failed'))); }catch(e){ toast(t('failed')); } closeSheet(); load(); };
   x.onerror=()=>{ b.disabled=false; toast(t('failed')); }; x.send(f); }

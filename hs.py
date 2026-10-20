@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Hojas Studio 4.29 — استوديو مونتاج بمحرّكه (مجلد engine بجنب هذا الملف، بدون أي مكتبة خارجية).
+"""Hojas Studio 4.36 — استوديو مونتاج بمحرّكه (مجلد engine بجنب هذا الملف، بدون أي مكتبة خارجية).
 
   python hs.py open   <work> [--engine <مجلد المحرّك>] [--port 8800] [--no-browser]
         يشغّل الخادم بالخلفية ويفتح المتصفح. شغّله أول ما تبدأ المونتاج، حتى قبل ما يجهز أي ملف.
@@ -44,6 +44,7 @@
   python hs.py pack   <work>                         حزمة النشر (فيديو + SRT عربي/إنجليزي + نص البوست)
   python hs.py notes  <work> [list | done <id> "وش سويت" | reopen <id>]
   python hs.py brand  <work> list | save <اسم> | apply <اسم>
+  python hs.py identity list | new "الاسم" [--text …] [--file …] | show | set | check | default | apply <work>   هويته (identity.md) لكل مونتاج وموشن وبودكاست (4.37)
   python hs.py patch  <work>          يركّب إضافة المحرّك على compose.html (آمن تكراره)
   python hs.py face   <work>                         يحدد مكان الوجه (يشتغل لحاله، هذا للإعادة)
   python hs.py mask   <work> <ث-ث> …                 يجهّز قص الشخص لمدى معيّن (يشتغل لحاله مع type=bg|behind)
@@ -80,7 +81,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.35"
+VERSION = "4.37"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -2300,6 +2301,7 @@ def brief_apply(work):
         try: r, g, b = (int(hx[i:i + 2], 16) for i in (1, 3, 5)); return "#%02X%02X%02X" % (int(r * k), int(g * k), int(b * k))
         except Exception: return hx
     if th_a.get("mode") == "mono": th0.update({"bg": "#0E0E10", "ink": "#FFFFFF", "acc": "#FFE14D", "clay": "#C9A800", "mut": "#9A9AA5"}); done.append("الألوان: أبيض وأسود")
+    elif th_a.get("mode") == "identity": pass   # 4.37: تنطبق آخر شي (ident_apply)
     elif th_a.get("mode") == "custom": th0.update({"bg": th_a.get("bg") or "#101014", "ink": th_a.get("ink") or "#FFFFFF", "acc": th_a.get("acc") or "#F2B33D", "clay": _dark(th_a.get("acc") or "#F2B33D"), "mut": "#9A9AA5"}); done.append("الألوان: ألوانه (%s · %s)" % (th0["bg"], th0["acc"]))
     else: todo.append("الألوان: قال «اختر لي من المقطع». اقرأ لقطة من الفيديو واختر خلفية غامقة قريبة من لون ملابسه أو خلفيته ولون تمييز يبان عليها، واكتبها في theme.json (bg · ink · acc · clay · mut) بدون ما تسأله")
     if th_a.get("handle"): th0["handle"] = th_a["handle"]
@@ -2399,8 +2401,16 @@ def brief_apply(work):
         except SystemExit: pass
         todo.append("الأسلوب: الدحيح شغّال. اقرأ <engine>/references/styles.md (القسم 2)، عدّل العنوان والهاشتاق، وحط كروت المكتب على كلامه وبدّل الخلفيات مع تغيّر الفكرة")
     elif stl == "dahih": todo.append("الأسلوب: الدحيح. اقرأ <engine>/references/styles.md (القسم 2) ثم: hs dahih <work> on --title \"…\" --tag \"…\"، وحط كروت المكتب على كلامه")
+    elif stl == "motion":   # 4.37: الموشن جرافيك أساسي
+        st3 = load_studio(work); hs_of(st3)["wantStyle"] = "motion"; wj(J(work, "studio.json"), st3); done.append("أسلوب موشن جرافيك")
+        todo.append("الأسلوب: موشن جرافيك (أساسي، مو زينة). اقرأ <engine>/references/motion-graphics.md كامل، اختر القالب من جدول التوجيه (قسم 3، ومقاطع حسابه MG-05 متكلم + إدخالات)، عبّ متغيراته من هويته وكلامه، وابنِ بالطبقات حسب «البناء بـ hs». افحص بقائمة قسم 6، وبعدها: hs brief <work> ok mg \"MG-xx: وش بنيت\"")
     if a.get("ref"): todo.append("مرجع يبي مثله: " + a["ref"])
     if a.get("notes"): todo.append("ملاحظاته الحرّة: " + a["notes"])
+    if th_a.get("mode") == "identity":   # 4.37: الهوية آخر شي عشان ما يغطيها شكل الكابشن أو البودكاست
+        try: done += ident_apply(work, th_a.get("identity")); t_ = ident_task(ident_get(th_a.get("identity")))
+        except Exception as e: done.append("الهوية ما انطبقت: " + str(e)[:80]); t_ = ""
+        if t_: todo.insert(0, t_)
+        todo.append("هويته: اقرأ %s قبل ما تصمم أي شي (الألوان والخطوط والموشن والدعوة منها)" % (ident_get(th_a.get("identity")) or {}).get("md", "identity.md"))
     nw = style_apply(work)
     if nw: done.append("تصحيحات كلمات تعلّمتها منه: %d" % nw)
     print("انطبق تلقائياً: " + ("، ".join(done) or "لا شي")); print("\nمهامك من إجاباته:")
@@ -2430,7 +2440,9 @@ def brief_reqs(work):
         R.append({"k": k, "label": label, "ok": bool(ok), "man": man, "why": why})
     ar = a.get("frame") if a.get("frame") in FRAMES else "9:16"; req("frame", "المقاس " + ar, frame_of(hs)[0] == ar)
     if a.get("cap"):
-        cp = hs.get("cap") or {}; diff = [k for k, v in a["cap"].items() if k not in ("y",) and cp.get(k) != v]
+        cp = hs.get("cap") or {}; ign_ = ("y", "font", "active") if ident_get(hs.get("identity")) else ("y",)   # 4.37: الهوية تغيّر الخط ولون الكلمة
+        if cp.get("font") == CAP_BRAND: ign_ += ("font", "weight")   # خط الهوية الخاص (ثمانية) يضبط الوزن على أوزانه
+        diff = [k for k, v in a["cap"].items() if k not in ign_ and cp.get(k) != v]
         req("cap", "الكابشن بالإعدادات اللي اختارها", cp.get("on", True) and not diff, ("تغيّر: " + "، ".join(diff)) if diff else "")
     plats = [x for x in (a.get("platform") or []) if x in PLATFORMS]
     if plats:
@@ -2438,6 +2450,9 @@ def brief_reqs(work):
         req("safe", "الكابشن داخل منطقة الأمان لـ " + "، ".join(plats), sz["capMin"] <= cy <= sz["capMax"], "الكابشن على %s%% والمسموح %s-%s" % (cy, sz["capMin"], sz["capMax"]))
     ta = a.get("theme") or {}
     if ta.get("mode") in ("mono", "custom"): req("colors", "الألوان اللي اختارها", (ta.get("mode") == "mono" and th.get("bg") == "#0E0E10") or (ta.get("mode") == "custom" and th.get("acc") == (ta.get("acc") or "#F2B33D")))
+    elif ta.get("mode") == "identity":   # 4.37
+        I_ = ident_get(ta.get("identity")); req("colors", "ألوان هويته «%s»" % ((I_ or {}).get("name") or ta.get("identity")), bool(I_) and th.get("acc") == I_["colors"]["acc"] and hs.get("identity") == I_["slug"], "" if I_ else "الهوية انحذفت")
+        req("idmd", "ملف الهوية كامل (identity.md)", bool(I_) and not I_.get("draft"), "لسه مسودة: اكتبه ثم hs identity check " + str(ta.get("identity")))
     else: req("colors", "ألوان مختارة من المقطع (قال اختر لي)", man=True, why="اقرأ لقطة واكتب الألوان في theme.json")
     if ta.get("handle") or (a.get("outro") or {}).get("handle"):
         hd = (a.get("outro") or {}).get("handle") or ta.get("handle"); req("handle", "الحساب " + hd, th.get("handle") == hd)
@@ -2486,6 +2501,10 @@ def brief_reqs(work):
         P = hs.get("pod") or {}; mp = (hs.get("en") or {}).get("map") or {}; miss = sum(1 for c in cards if not mp.get(card_key(c)))
         req("style", "بودكاست مترجم: عنوان وترجمة لكل جملة", P.get("on") and P.get("title") and not miss, ("ناقص ترجمة %d جملة" % miss) if miss else ("" if P.get("title") else "ما فيه عنوان"))
     elif stl == "paper": req("style", "أسلوب الورق المتحرك", any(L.get("type") == "kinetic" for L in Ls))
+    elif stl == "motion":   # 4.37
+        nmg = sum(1 for L in Ls if L.get("type") in ("mg", "viz", "split", "kinetic", "behind", "cover", "anno", "collage", "draw", "desk", "mark", "cursor")); want_ = max(2, int(total // 8))
+        req("mgn", "موشن جرافيك: %d عناصر موشن على الأقل" % want_, nmg >= want_, "الحين %d" % nmg)
+        req("mg", "قالب الموشن من motion-graphics.md", man=True, why='hs brief <work> ok mg "MG-xx: …"')
     elif stl == "dahih": req("style", "أسلوب الدحيح مع كروت مكتب", (hs.get("dahih") or {}).get("on") and any(L.get("type") == "desk" for L in Ls), "" if (hs.get("dahih") or {}).get("on") else "الأسلوب مو شغّال")
     goal = (a.get("goalText") or "").strip() if a.get("goal") == "other" else a.get("goal")
     if goal: req("goal", "نوع المقطع: " + str(goal), man=True)
@@ -3574,6 +3593,46 @@ def cmd_selftest(work=None, engine=None):
         chk("4.35: معايرة الصوت بدون bash، حذف المقطع لسلة، «ما عجبتني بدّلها»",
             okm and okt and "try: master_audio(work, out_final, out_master" in me_ and "function swapNote" in ap_ and "data-trash" in hb_ and "isn't for this environment" in open(os.path.join(HERE, "GUIDE.html"), encoding="utf-8").read())
     except Exception as e: chk("4.35", False, str(e)[:240])
+    try:   # 4.36: تجميد اللقطة
+        td = tempfile.mkdtemp(prefix="hs-frz-")
+        try:
+            wj(os.path.join(td, "studio.json"), {"hs": {"layers": []}}); er_ = None
+            import contextlib, io
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_layer(td, ["add", "type=mg", "kind=freeze", "style=photo", "label=قبل سنتين", "s=2"]); cmd_layer(td, ["add", "type=mg", "kind=rewind", "s=5"])
+                try: cmd_layer(td, ["add", "type=mg", "kind=freeze", "style=xx"])
+                except SystemExit as e: er_ = str(e)
+            LL = hs_of(load_studio(td))["layers"]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read()
+        chk("4.36: تجميد اللقطة (فلاش، صورة، كوميكس، فيلم): الفريم يوقف وصوتك والكابشن يكملون، بالمحرّك والاستوديو والطرفية وكليك يمين",
+            len(LL) == 2 and LL[0]["kind"] == "freeze" and LL[0]["style"] == "photo" and abs(LL[0]["e"] - 4.2) < 1e-6 and LL[1]["kind"] == "rewind" and er_ and "flash" in er_
+            and "L.kind==='freeze'" in ex_ and "w.kind==='freeze'" in ex_ and all("st==='%s'" % k in ex_ for k in ("flash", "photo", "comic")) and "function frzDraw" in ex_
+            and "'freeze'" in ap_ and "function freezeHere" in ap_ and "ctxFreeze" in ap_ and all(k in i18_ for k in ("mg_freeze:", "frz_film:", "ctxFreeze:")) and "kind=freeze" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+    except Exception as e: chk("4.36: تجميد اللقطة", False, str(e)[:240])
+    try:   # 4.37: Motion Graphics أساسي، والهوية المحفوظة
+        td = tempfile.mkdtemp(prefix="hs-37-"); old_h = HOME_CFG
+        try:
+            globals()["HOME_CFG"] = td
+            I = ident_new("اختبار", "الخلفية #101010 والمميز #E8202A وخط Cairo، حسابي @abc والدعوة «ستوديو»")
+            w_ = os.path.join(td, "w"); os.makedirs(w_); wj(os.path.join(w_, "studio.json"), {}); ident_apply(w_)
+            th_ = rj(os.path.join(w_, "theme.json"), {}) or {}; st_ = load_studio(w_)
+            oki = (I["colors"]["acc"] == "#E8202A" and I["colors"]["bg"] == "#101010" and th_.get("acc") == "#E8202A" and th_.get("handle") == "@abc" and hs_of(st_).get("identity") == I["slug"]
+                   and (hs_of(st_).get("cap") or {}).get("active") == "#E8202A" and (st_.get("outro") or {}).get("word") == "ستوديو" and I.get("draft") and not ident_check("اختبار")[0] and ident_default() == I["slug"])
+            md_ = open(I["md"], encoding="utf-8").read(); open(I["md"], "w", encoding="utf-8").write("\n".join(l for l in md_.split("\n") if not l.startswith("> مسودة")))
+            okc = ident_check("اختبار")[0] and not ident_get("اختبار").get("draft") and ident_pick(w_, "none") is None
+        finally: globals()["HOME_CFG"] = old_h; shutil.rmtree(td, ignore_errors=True)
+        mg = open(os.path.join(HERE, "engine", "references", "motion-graphics.md"), encoding="utf-8").read(); tpl = mg.split("## 4) القوالب")[1].split("## 5)")[0]
+        cat = re.findall(r"^\| (T\d\d) \|", mg, re.M); blocks = tpl.split("### MG-")[1:]
+        flds = ("**متى:**", "**من وين:**", "**الأصول", "**المتغيرات:**", "**الشكل:**", "**الضربات", "**حركة كل عنصر:**", "**الانتقالات", "**الصوت والكابشن:**", "**المدة والمقاس:**", "**البناء بـ hs:**", "**البرومبت الجاهز:**", "**لو ناقص شي:**")
+        okm = (all(("| %02d_" % i) in mg for i in range(1, 17)) and len(blocks) == 10 and all(all(f in b for f in flds) for b in blocks) and len(cat) >= 90 and set(cat) <= set(re.findall(r"T\d\d", tpl))
+               and "## 5) البرومبت الرئيسي" in mg and "## 6) الصفحة الفاضية" in mg and "## 7) فحص الموشن" in mg and os.path.isfile(os.path.join(HERE, "engine", "references", "identity.md")))
+        ex37 = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); okm = okm and "if(rt<0.18&&an!=='none')" in ex37 and "if(V.lay==='bare'){ const cb0=L.bgColor" in ex37   # 4.37: الصفحة الفاضية (قطع نظيف، والكتابة بلونها)
+        sk_ = open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
+        oku = ("## 2ب) Motion Graphics" in sk_ and "## 2ج) الهوية المحفوظة" in sk_ and "references/motion-graphics.md" in sk_ and "'normal','motion','podcast','paper','dahih'" in ap_ and "function idSecHtml" in ap_
+               and "/hs/identity_file" in ap_ and "data-nid" in hb_ and "['motion',IC.spark" in hb_ and 'stl == "motion"' in open(os.path.abspath(__file__), encoding="utf-8").read())
+        chk("4.37: Motion Graphics أساسي (16 مجلد، %d تقنية، 10 قوالب كاملة) والهوية المحفوظة تنطبق على المونتاج والموشن والبودكاست" % len(cat), oki and okc and okm and oku, "هوية=%s فحص=%s مرجع=%s واجهة=%s" % (oki, okc, okm, oku))
+    except Exception as e: chk("4.37", False, str(e)[:240])
     try:   # 4.26: حارس: ولا متغيّر داخل السيرفر يغطّي D (مجلد الكاش) أو P أو S، كان يخلّي الفريمات والصور المصغّرة ما تطلع
         me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
         bad_ = [l.strip()[:60] for l in me_.split(chr(10)) if re.match(r"^ {16,}(D|P|S|base|work) = ", l)]
@@ -3749,6 +3808,8 @@ def cmd_set(work, args):
         cur[parts[-1]] = val
     wj(sp, st); print(json.dumps({k: v for k, v in hs.items() if k in ("cap", "en", "mix", "hooks", "check")}, ensure_ascii=False)[:900])
 MG_KINDS = ("stat", "slam", "check", "steps", "callout", "quote", "ring", "compare", "sting", "logo")
+MG_ALL = MG_KINDS + ("stretch", "rec", "notif", "search", "apps", "articles", "mosaic", "rewind", "ba", "freeze")   # 4.36: الطرفية تقبل موشن 4.28 والتجميد بعد
+FREEZE_STYLES = ("flash", "photo", "comic", "film")
 ANNO_KINDS = ("ring", "spots", "route", "path", "wave", "tap", "boxes", "tags", "screen", "spinner", "arrow", "scribble", "underline", "highlight", "cross", "check", "lens", "spotlight", "blur", "bubble", "frame", "scan", "burst", "stars", "price")
 # ── 4.29: حركة بالمفاتيح (keyframes): نفس حساب ext.js والاستوديو، عشان Claude يقدر يحطها من الطرفية ──
 KF_TYPES = ("text", "image", "char", "lt", "mark", "draw")
@@ -3838,7 +3899,11 @@ def cmd_layer(work, args):
     if sub == "add":
         o = parse_kv(args[1:])
         if o.get("type") not in ("text", "image", "char", "fx", "split", "viz", "cover", "bg", "behind", "pip", "mark", "cursor", "lt", "collage", "kinetic", "desk", "draw", "mg", "anno"): sys.exit("type لازم: anno | mg | text | image | char | fx | split | viz | cover | bg | behind | pip | mark | cursor | lt | kinetic | desk | collage | draw")
-        if o["type"] == "mg" and o.get("kind") not in MG_KINDS: sys.exit("kind لازم: " + " | ".join(MG_KINDS))
+        if o["type"] == "mg" and o.get("kind") not in MG_ALL: sys.exit("kind لازم: " + " | ".join(MG_ALL))
+        if o["type"] == "mg" and o.get("kind") == "freeze":   # 4.36: تجميد اللقطة
+            if o.setdefault("style", "flash") not in FREEZE_STYLES: sys.exit("style لازم: " + " | ".join(FREEZE_STYLES))
+            o.setdefault("track", 1); o.setdefault("label", "")
+            if "e" not in o: o["e"] = round(float(o.get("s", 0)) + 2.2, 3)
         if o["type"] == "anno":   # 4.15: تعليق على الصورة
             if o.get("kind", "ring") not in ANNO_KINDS: sys.exit("kind لازم: " + " | ".join(ANNO_KINDS))
             o.setdefault("kind", "ring"); o.setdefault("anim", "none"); o.setdefault("track", 1)
@@ -3894,6 +3959,214 @@ def brand_apply(work, b):
     sp = J(work, "studio.json"); st = load_studio(work); hs = hs_of(st)
     hs["cap"] = {**(hs.get("cap") or {}), **(b.get("cap") or {})}; hs["en"] = {**(hs.get("en") or {}), **(b.get("en") or {})}; wj(sp, st)
     tp = J(work, "theme.json"); th = rj(tp, {}) or {}; th.update(b.get("theme") or {}); wj(tp, th)
+# ── 4.37: هوية الشخص (identity.md): Claude يكتبها مرة من ملف يرفعه أو وصف يكتبه، وتنطبق لحالها على كل مونتاج وموشن وبودكاست ──
+IDENT_HEADS = ("## الألوان", "## الخطوط", "## الشعار", "## الكابشن", "## Motion Graphics", "## البودكاست", "## المونتاج العادي", "## الدعوة والنبرة", "## ممنوعات")
+IDENT_FONTS = ("IBM Plex Sans Arabic", "Noto Naskh Arabic", "Noto Kufi Arabic", "Readex Pro", "El Messiri", "Reem Kufi", "Aref Ruqaa", "Cairo", "Tajawal", "Almarai", "Lalezar", "Changa", "Amiri", "Rubik", "Inter", "Montserrat", "Poppins")
+IDENT_EXT = (".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif", ".pdf", ".md", ".txt", ".ttf", ".otf", ".woff", ".woff2", ".json")
+_HEX = r"#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])"
+def _hexdark(hx, k=0.72):
+    try: r, g, b = (int(hx[i:i + 2], 16) for i in (1, 3, 5)); return "#%02X%02X%02X" % (int(r * k), int(g * k), int(b * k))
+    except Exception: return hx
+def ident_root(): d = os.path.join(HOME_CFG, "identity"); os.makedirs(d, exist_ok=True); return d
+def ident_slug(name): return re.sub(r"[^\w\-]+", "-", str(name or "").strip()).strip("-_")[:40] or "me"
+def ident_dir(name): return os.path.join(ident_root(), ident_slug(name))
+def ident_default(v=None):
+    """الهوية الافتراضية: تنطبق على أي مشروع جديد ما اختار له هوية."""
+    p = os.path.join(ident_root(), "default.txt")
+    if v is not None:
+        s = ident_slug(v) if v else ""; open(p, "w", encoding="utf-8").write(s); return s
+    try: s = open(p, encoding="utf-8").read().strip()
+    except OSError: s = ""
+    return s if s and os.path.isfile(os.path.join(ident_root(), s, "identity.json")) else ""
+def ident_get(name):
+    if not name or name == "none": return None
+    d = ident_dir(name); I = rj(os.path.join(d, "identity.json"))
+    if not isinstance(I, dict): return None
+    C = {"bg": "#101014", "ink": "#FFFFFF", "acc": "#F2B33D", "acc2": "", "mut": "#9A9AA5", **{k: v for k, v in (I.get("colors") or {}).items() if v}}
+    if not (I.get("colors") or {}).get("ink"):   # الكتابة تعاكس الخلفية لو ما حددها
+        try: C["ink"] = "#141414" if sum(int(C["bg"][i:i + 2], 16) * w for i, w in ((1, 0.2126), (3, 0.7152), (5, 0.0722))) / 255 > 0.55 else "#FFFFFF"
+        except Exception: pass
+    F = {"head": "", "body": "", "script": "", **(I.get("fonts") or {})}
+    return {**I, "slug": os.path.basename(d), "dir": d, "md": os.path.join(d, "identity.md"), "colors": C, "fonts": F}
+def ident_files(I): fd = os.path.join(I["dir"], "files"); return sorted(os.listdir(fd)) if os.path.isdir(fd) else []
+def ident_list():
+    dflt = ident_default(); out = []
+    for s in sorted(os.listdir(ident_root())):
+        I = ident_get(s) if os.path.isdir(os.path.join(ident_root(), s)) else None
+        if I: out.append({"slug": I["slug"], "name": I.get("name") or I["slug"], "draft": bool(I.get("draft")), "default": I["slug"] == dflt, "colors": I["colors"], "fonts": I["fonts"], "handle": I.get("handle") or "", "cta": I.get("cta") or "", "mg": I.get("mg") or "", "files": len(ident_files(I)), "md": os.path.isfile(I["md"])})
+    return out
+def ident_parse(text):
+    """أول قراءة للوصف بدون Claude (الألوان، الحساب، الخط، كلمة الدعوة). Claude يكمّل الباقي بـ identity.md."""
+    t = str(text or ""); o = {"colors": {}, "fonts": {}, "handle": "", "cta": ""}
+    def hx(h): h = h.upper(); return ("#" + "".join(c * 2 for c in h[1:])) if len(h) == 4 else h
+    for key, words in (("bg", "خلفية|background|bg"), ("ink", "كتابة|نص|ink|text"), ("acc", "مميز|تمييز|accent|primary|أساسي|رئيسي")):
+        m = re.search(r"(?:%s)[^#\n]{0,24}(%s)" % (words, _HEX), t, re.I)
+        if m: o["colors"][key] = hx(m.group(1))
+    rest = [hx(h) for h in re.findall(_HEX, t)]; rest = [h for i, h in enumerate(rest) if h not in o["colors"].values() and h not in rest[:i]]
+    def lum(h): r, g, b_ = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)); return 0.2126 * r + 0.7152 * g + 0.0722 * b_
+    def sat(h): v = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]; return (max(v) - min(v)) / (max(v) or 1)
+    if "bg" not in o["colors"] and rest:   # بدون كلمة: الأغمق خلفية لو غامق فعلاً، والأشبع مميز
+        dk = min(rest, key=lum)
+        if lum(dk) < 0.2: o["colors"]["bg"] = dk; rest.remove(dk)
+    if "acc" not in o["colors"] and rest: ac = max(rest, key=sat); o["colors"]["acc"] = ac; rest.remove(ac)
+    if "bg" not in o["colors"] and rest: o["colors"]["bg"] = rest.pop(0)
+    if rest: o["colors"]["acc2"] = rest.pop(0)
+    m = re.search(r"@[A-Za-z0-9_.]{2,30}", t); o["handle"] = m.group(0).rstrip(".") if m else ""
+    found = []
+    for f in IDENT_FONTS:
+        if re.search(r"(?<![A-Za-z])" + re.escape(f) + r"(?![A-Za-z])", t, re.I) and not any(f in g for g in found): found.append(f)
+    found.sort(key=lambda f: t.lower().find(f.lower()))
+    if found: o["fonts"]["head"] = found[0]; o["fonts"]["body"] = found[1] if len(found) > 1 else found[0]
+    m = re.search(r"(?:الدعوة|دعوة|CTA|كلمة)[^«\"\n]{0,16}[«\"]([^»\"\n]{1,24})[»\"]", t, re.I); o["cta"] = m.group(1).strip() if m else ""
+    return o
+def ident_md_draft(I, text=""):
+    C, F = I["colors"], I["fonts"]; fs = ident_files(I)
+    L = ["# هوية %s" % (I.get("name") or I["slug"]), "", "> مسودة: انكتبت من وصفه بدون Claude. Claude يكمّلها أول مرة يشتغل على مقطع له (الدليل: engine/references/identity.md)، وبعدها: hs identity check %s" % I["slug"], "",
+         "سطر الهوية: (مين هو ووش يقدّم، بجملة وحدة)", "",
+         "## الألوان", "", "| الدور | اللون | وين |", "|---|---|---|",
+         "| الخلفية | %s | خلفية الكروت والموشن (تقريباً 60%%) |" % C["bg"], "| الكتابة | %s | النصوص (30%%) |" % C["ink"], "| المميز | %s | كلمة وحدة بالسطر، الأزرار، الدعوة (10%%) |" % C["acc"]]
+    if C.get("acc2"): L.append("| مميز ثاني | %s | للرسوم بس، مو للنص |" % C["acc2"])
+    L += ["", "## الخطوط", "", "- العنوان: " + (F.get("head") or "Cairo 800"), "- الكابشن والنص: " + (F.get("body") or "Tajawal 700"), "- كلمة بخط اليد: " + (F.get("script") or "Aref Ruqaa"), "",
+          "## الشعار", "", "- الملف: " + (I.get("logo") or "ما فيه بعد"), "- مكانه: ختم بالنهاية (`mg sting brand=logo`) وعلامة صغيرة لو طلبها", "",
+          "## الكابشن", "", "- الكلمة المنطوقة والمهمة بلون المميز " + C["acc"], "- الشكل الباقي من صفحة الأسئلة", "",
+          "## Motion Graphics", "", "- القالب المفضل: " + (I.get("mg") or "MG-05 متكلم + إدخالات موشن (engine/references/motion-graphics.md)"), "- لون مميز واحد، 2 إلى 3 أنماط حركة", "",
+          "## البودكاست", "", "- صندوق اسم المتكلم: " + ((I.get("pod") or {}).get("nameBg") or C["bg"]), "- الكلمة المهمة بالكابشن: " + C["acc"], "",
+          "## المونتاج العادي", "", "- الهوك وكروت الشرح بنفس الألوان والخطوط", "",
+          "## الدعوة والنبرة", "", "- كلمة الدعوة: " + (I.get("cta") or "(كلمة وحدة ثابتة، نفس الإملاء بكل مكان)"), "- الحساب: " + (I.get("handle") or "ما فيه"), "",
+          "## ممنوعات", "", "- لون مميز ثاني بالنص، ونص فوق نص", "",
+          "## مصدر الهوية", "", "- طلبه: " + (re.sub(r"\s+", " ", str(text or "")).strip()[:800] or "ما كتب وصف"), "- الملفات: " + ("، ".join("files/" + f for f in fs) or "ما فيه")]
+    return "\n".join(L) + "\n"
+def ident_add_file(name, fname, raw):
+    b = os.path.basename(str(fname or "file")); safe = re.sub(r"[^\w.\- ]+", "_", b)[:80] or "file"
+    if not safe.lower().endswith(IDENT_EXT): raise ValueError("صيغة الملف غير مدعومة (صور، PDF، MD، خطوط)")
+    if len(raw) > 40 * 1024 * 1024: raise ValueError("الملف أكبر من 40 ميقا")
+    fd = os.path.join(ident_dir(name), "files"); os.makedirs(fd, exist_ok=True); open(os.path.join(fd, safe), "wb").write(raw); return "files/" + safe
+def ident_adopt(key, name):
+    """الملفات اللي انرفعت بمفتاح مؤقت (قبل ما يكتب الاسم) تنتقل لمجلد الهوية."""
+    if not key or ident_slug(key) == ident_slug(name): return
+    src = os.path.join(ident_dir(key), "files")
+    if os.path.isdir(src):
+        dst = os.path.join(ident_dir(name), "files"); os.makedirs(dst, exist_ok=True)
+        for f in os.listdir(src): shutil.move(os.path.join(src, f), os.path.join(dst, f))
+    if not os.path.isfile(os.path.join(ident_dir(key), "identity.json")): shutil.rmtree(ident_dir(key), ignore_errors=True)
+def ident_new(name, text="", files=(), default=None):
+    """ينشئ الهوية أو يزيد عليها: الملفات بـ files/، والطلب بـ request.md، وقراءة أولى للألوان والخط والحساب. identity.md مسودة لين يكملها Claude."""
+    d = ident_dir(name); fd = os.path.join(d, "files"); os.makedirs(fd, exist_ok=True)
+    for f in files or []:
+        if os.path.isfile(f): shutil.copy2(f, os.path.join(fd, os.path.basename(f)))
+    old = rj(os.path.join(d, "identity.json")) or {}; P = ident_parse(text)
+    I = {**old, "name": (str(name).strip()[:60] or old.get("name") or os.path.basename(d))}
+    I["colors"] = {**(old.get("colors") or {}), **P["colors"]}; I["fonts"] = {**(old.get("fonts") or {}), **{k: v for k, v in P["fonts"].items() if v}}
+    for k in ("handle", "cta"):
+        if P.get(k): I[k] = P[k]
+    fl = sorted(os.listdir(fd)); imgs = [x for x in fl if x.lower().endswith((".png", ".svg", ".webp", ".jpg", ".jpeg"))]
+    lg = next((x for x in imgs if re.search(r"logo|شعار", x, re.I)), imgs[0] if len(imgs) == 1 else "")
+    if lg and not I.get("logo"): I["logo"] = "files/" + lg
+    I["fontFiles"] = ["files/" + x for x in fl if x.lower().endswith((".ttf", ".otf", ".woff", ".woff2"))]
+    md = os.path.join(d, "identity.md"); I["draft"] = bool(old.get("draft", True)) or not os.path.isfile(md); I["updated"] = int(time.time())
+    if str(text or "").strip():
+        with open(os.path.join(d, "request.md"), "a", encoding="utf-8") as f: f.write("\n## %s\n\n%s\n" % (time.strftime("%Y-%m-%d %H:%M"), str(text).strip()))
+    wj(os.path.join(d, "identity.json"), I); G = ident_get(name)
+    if not os.path.isfile(md) or I["draft"]: open(md, "w", encoding="utf-8").write(ident_md_draft(G, text or (open(os.path.join(d, "request.md"), encoding="utf-8").read() if os.path.isfile(os.path.join(d, "request.md")) else "")))
+    if default or (default is None and not ident_default()): ident_default(G["slug"])
+    return G
+def ident_check(name):
+    """يفحص identity.md: كل الأقسام موجودة، ما هي مسودة، والألوان صحيحة. لو سليمة تنشال علامة المسودة."""
+    I = ident_get(name)
+    if not I: return False, ["ما لقيت الهوية: %s" % name]
+    md = open(I["md"], encoding="utf-8").read() if os.path.isfile(I["md"]) else ""; miss = []
+    if not md: miss.append("identity.md مو موجود")
+    miss += ["قسم ناقص: " + h for h in IDENT_HEADS if md and h not in md]
+    if "> مسودة" in md: miss.append("لسه مسودة: اكتب سطر الهوية وكمّل الأقسام وشيل سطر «> مسودة»")
+    miss += ["لون غلط: %s=%s" % (k, v) for k, v in I["colors"].items() if v and not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(v))]
+    if not miss and I.get("draft"):
+        J_ = rj(os.path.join(I["dir"], "identity.json")) or {}; J_["draft"] = False; wj(os.path.join(I["dir"], "identity.json"), J_)
+    return not miss, miss
+def ident_pick(work, want=None):
+    """أي هوية تنطبق: اللي اختارها («none» = بدون) ← المحفوظة بالمشروع ← الافتراضية."""
+    if want == "none": return None
+    return ident_get(want) or ident_get(hs_of(load_studio(work)).get("identity")) or (None if hs_of(load_studio(work)).get("identity") == "none" else ident_get(ident_default()))
+def ident_apply(work, name=None):
+    """يطبّق الهوية على المشروع: ألوان theme.json، خط ولون الكابشن، الحساب، كلمة الدعوة، الشعار، صندوق اسم البودكاست، والخطوط المرفوعة."""
+    I = ident_pick(work, name)
+    if not I: return []
+    C, F = I["colors"], I["fonts"]
+    tp = J(work, "theme.json"); th = rj(tp, {}) or {}
+    th.update({"bg": C["bg"], "ink": C["ink"], "acc": C["acc"], "clay": _hexdark(C["acc"]), "mut": C.get("mut") or "#9A9AA5"})
+    if I.get("handle"): th["handle"] = I["handle"]
+    if F.get("head"): th["font"] = F["head"]
+    wj(tp, th)
+    st = load_studio(work); hs = hs_of(st); hs["identity"] = I["slug"]
+    for rel in I.get("fontFiles") or []:
+        src = os.path.join(I["dir"], rel)
+        if not os.path.isfile(src): continue
+        os.makedirs(J(work, "fonts"), exist_ok=True); b = os.path.basename(src); shutil.copy2(src, J(work, "fonts", b)); fl = hs.setdefault("fonts", [])
+        if not any(x.get("file") == b for x in fl): fl.append({"name": os.path.splitext(b)[0], "file": b})
+    cap = hs.setdefault("cap", {}); cap["active"] = C["acc"]
+    if F.get("body"): cap["font"] = F["body"]
+    if I.get("logo") and os.path.isfile(os.path.join(I["dir"], I["logo"])):
+        os.makedirs(J(work, "assets"), exist_ok=True); lg = "assets/identity-logo" + os.path.splitext(I["logo"])[1].lower(); shutil.copy2(os.path.join(I["dir"], I["logo"]), J(work, lg)); hs["identityLogo"] = lg
+    if I.get("cta"):
+        ot = st.setdefault("outro", {})
+        if not ot.get("word"): ot["word"] = I["cta"]
+    nb = (I.get("pod") or {}).get("nameBg") or C["bg"]
+    for L in hs.get("layers") or []:
+        if L.get("auto") in ("name", "host") and L.get("type") == "text":
+            L["bgColor"] = nb
+            if F.get("head"): L["font"] = F["head"]
+    wj(J(work, "studio.json"), st)
+    return ["الهوية: %s%s" % (I.get("name") or I["slug"], " (مسودة، Claude يكمّلها)" if I.get("draft") else "")]
+def ident_task(I):
+    """سطر مهمة لـ Claude لو الهوية لسه مسودة."""
+    if not I or not I.get("draft"): return ""
+    return ("الهوية «%s» لسه مسودة: اقرأ engine/references/identity.md، وطلبه (%s)، وملفاته (%s)، واكتب %s كامل (الألوان والخطوط والشعار والكابشن والموشن والبودكاست والدعوة)، "
+            "وحدّث الألوان والخطوط: hs identity set %s colors.acc=#… fonts.head=… cta=…، ثم hs identity check %s لين يطلع سليم. بعدها hs identity apply <work>") % (
+            I.get("name") or I["slug"], os.path.join(I["dir"], "request.md"), os.path.join(I["dir"], "files"), I["md"], I["slug"], I["slug"])
+def cmd_identity(args):
+    sub = args[0] if args else "list"; rest = args[1:]
+    if sub == "list":
+        L = ident_list()
+        if not L: print("ما فيه هويات. سوّ وحدة: hs identity new \"الاسم\" --text \"وصفها\" [--file شعار.png]"); return
+        for x in L: print("%s %-18s %s · %s%s%s" % ("★" if x["default"] else " ", x["slug"], x["colors"]["acc"], x["fonts"].get("head") or "بدون خط", " · مسودة" if x["draft"] else "", (" · " + x["handle"]) if x["handle"] else ""))
+        return
+    if sub == "new":
+        if not rest: sys.exit('identity new "الاسم" [--text "الوصف"] [--file ملف]... [--default]')
+        text, files, i = "", [], 1
+        while i < len(rest):
+            if rest[i] == "--text" and i + 1 < len(rest): text = rest[i + 1]; i += 2
+            elif rest[i] == "--file" and i + 1 < len(rest): files.append(rest[i + 1]); i += 2
+            else: i += 1
+        I = ident_new(rest[0], text, files, default=True if "--default" in rest else None); print("انحفظت الهوية:", I["slug"], "·", I["md"]); t = ident_task(I)
+        if t: print("□ " + t)
+        return
+    I = ident_get(rest[0]) if rest else ident_get(ident_default())
+    if sub in ("show", "path"):
+        if not I: sys.exit("ما لقيت الهوية. hs identity list")
+        if sub == "path": print(I["dir"]); return
+        print(json.dumps({k: I[k] for k in ("slug", "name", "colors", "fonts", "handle", "cta", "logo", "mg", "draft") if k in I}, ensure_ascii=False, indent=1)); print("الملف:", I["md"])
+        if os.path.isfile(I["md"]): print(open(I["md"], encoding="utf-8").read())
+        return
+    if sub == "set":
+        if not I: sys.exit("identity set <الاسم> colors.acc=#E8202A fonts.head=Cairo cta=ستوديو handle=@x mg=MG-05 logo=files/logo.png pod.nameBg=#141413")
+        jp = os.path.join(I["dir"], "identity.json"); J_ = rj(jp, {}) or {}
+        for k, v in parse_kv(rest[1:]).items():
+            cur = J_; ps = k.split(".")
+            for p_ in ps[:-1]: cur = cur.setdefault(p_, {})
+            cur[ps[-1]] = (str(v).upper() if re.fullmatch(_HEX, str(v)) else v) if ps[-1] != "draft" else str(v).lower() in ("1", "true", "yes")
+        J_["updated"] = int(time.time()); wj(jp, J_); print("تحدّثت:", I["slug"]); return
+    if sub == "check":
+        ok, miss = ident_check(rest[0] if rest else ident_default())
+        print("سليمة: جاهزة لكل مونتاج وموشن وبودكاست" if ok else "ناقص:\n  " + "\n  ".join(miss)); sys.exit(0 if ok else 4)
+    if sub == "default":
+        if not I: sys.exit("ما لقيت الهوية. hs identity list")
+        print("الافتراضية الحين:", ident_default(I["slug"])); return
+    if sub == "apply":
+        if not rest: sys.exit("identity apply <work> [الاسم]")
+        w = os.path.abspath(rest[0]); done = ident_apply(w, rest[1] if len(rest) > 1 else None); print("، ".join(done) or "ما فيه هوية تنطبق (hs identity list)")
+        t = ident_task(ident_pick(w, rest[1] if len(rest) > 1 else None))
+        if t: print("□ " + t)
+        return
+    sys.exit("identity: list | new \"الاسم\" [--text …] [--file …] | show [الاسم] | set <الاسم> key=value… | check [الاسم] | default <الاسم> | apply <work> [الاسم] | path [الاسم]")
 def cmd_brand(work, args):
     sub = args[0] if args else "list"
     if sub == "list": print("\n".join(sorted(os.path.splitext(f)[0] for f in os.listdir(brand_dir()))) or "ما فيه هويات محفوظة.")
@@ -4315,7 +4588,8 @@ def serve(work, port, engine):
                 caps = rj(P("caps.json"), {"cards": []}) or {"cards": []}; ck = check(work) if caps.get("cards") else {"fillers": [], "dupes": []}
                 return self._json(200, {"ask": rj(brief_paths(work)[0], {}), "answers": rj(brief_paths(work)[1]), "last": rj(os.path.join(HOME_CFG, "last-brief.json")), "state": brief_state(work),
                                         "cards": [card_key(c) for c in caps["cards"]], "fillers": len(ck["fillers"]), "dupes": [[d["a"], d["b"]] for d in ck["dupes"]],
-                                        "brands": sorted(os.path.splitext(f)[0] for f in os.listdir(brand_dir())), "name": os.path.basename(work.rstrip("/\\")), "platforms": {k: {"frames": v["frames"]} for k, v in PLATFORMS.items()}, "reqs": brief_reqs(work), "sound": sound_providers()})
+                                        "brands": sorted(os.path.splitext(f)[0] for f in os.listdir(brand_dir())), "name": os.path.basename(work.rstrip("/\\")), "platforms": {k: {"frames": v["frames"]} for k, v in PLATFORMS.items()}, "reqs": brief_reqs(work), "sound": sound_providers(),
+                                        "ids": ident_list(), "idDefault": ident_default(), "want": {"style": hs_of(load_studio(work)).get("wantStyle") or "", "identity": hs_of(load_studio(work)).get("identity") or ""}})
             if p == "/hs/media_search":
                 try: return self._json(200, {"ok": True, "items": (video_search if (q.get("kind") or [""])[0] == "video" else media_search)(work, (q.get("q") or [""])[0], 12)})
                 except Exception as e: return self._json(200, {"ok": False, "msg": "البحث فشل (تأكد من النت): " + str(e)[:160], "items": []})
@@ -4449,6 +4723,11 @@ def serve(work, port, engine):
                         except OSError: pass
                         return self._json(400, {"ok": False, "msg": "ما قدرت أقرأ الملف كصوت"})
                     return self._json(200, {"ok": True, "id": m["id"], "items": sfx_all()})
+                if p == "/hs/identity_file":   # 4.37: ملف الهوية (شعار، دليل PDF، صور، خطوط، MD)
+                    qq = self._q()
+                    try: rel = ident_add_file((qq.get("name") or ["هويتي"])[0] or "هويتي", urllib.parse.unquote(self.headers.get("X-Name") or "file"), raw)
+                    except ValueError as e: return self._json(400, {"ok": False, "msg": str(e)})
+                    return self._json(200, {"ok": True, "file": rel})
                 if p in ("/hs/font", "/hs/asset"):
                     name = os.path.basename(urllib.parse.unquote(self.headers.get("X-Name") or "file"))
                     pat = r"\.(ttf|otf|woff2?)$" if p == "/hs/font" else r"\.(png|jpe?g|webp|gif|svg)$"
@@ -4620,7 +4899,11 @@ def serve(work, port, engine):
                     ok = base.job("render", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
                 if p == "/hs/pack": return self._json(200, {"ok": True, "files": pack(work), "zip": "/hs/pack.zip"})
                 if p == "/hs/brief_save":
-                    ans = data.get("answers") or {}; ans["savedAt"] = int(time.time()); wj(brief_paths(work)[1], ans)
+                    ans = data.get("answers") or {}; ans["savedAt"] = int(time.time()); th_ = ans.get("theme") or {}
+                    if th_.get("mode") == "newid":   # 4.37: هوية جديدة (ملفات رفعها أو وصف كتبه) تنحفظ وتصير هويته لكل مقاطعه
+                        try: nm_ = str(th_.get("idName") or "").strip() or "هويتي"; ident_adopt(th_.get("idKey"), nm_); I_ = ident_new(nm_, str(th_.get("idText") or ""), default=True); th_.update({"mode": "identity", "identity": I_["slug"]}); ans["theme"] = th_
+                        except Exception as e: return self._json(400, {"ok": False, "msg": "ما قدرت أحفظ الهوية: " + str(e)[:160]})
+                    wj(brief_paths(work)[1], ans)
                     try: os.makedirs(HOME_CFG, exist_ok=True); wj(os.path.join(HOME_CFG, "last-brief.json"), {k: v for k, v in ans.items() if k not in ("cut", "hook", "notes", "ref", "extra", "savedAt")})
                     except Exception: pass
                     say(work, "حفظ إجاباته. Claude يبدأ المونتاج.", "done"); return self._json(200, {"ok": True})
@@ -5215,6 +5498,8 @@ def clip_make(d, a_, b_, title="", credit="", name=None, style=None):
         hs["cap"] = {**(hs.get("cap") or {}), **POD_CAP}; hs["en"] = {**(hs.get("en") or {}), "on": True}
     hs["clip"] = {"from": round(a_, 2), "to": round(b_, 2), "ep": os.path.basename(d)}
     wj(J(w, "studio.json"), st)
+    try: ident_apply(w, (cfg.get("want") or {}).get("identity") or None)   # 4.37: نفس هويته بكل مقطع (صندوق الاسم ولون الكلمة والخط)
+    except Exception: pass
     if os.path.isfile(J(d, "brief.json")) and not os.path.isfile(J(w, "brief.json")): shutil.copy(J(d, "brief.json"), J(w, "brief.json"))
     cfg = clips_cfg(d); cfg.setdefault("clips", []).append({"name": os.path.basename(w), "from": round(a_, 2), "to": round(b_, 2), "title": title, "credit": credit}); wj(J(d, "clips.json"), cfg)
     return w
@@ -6198,7 +6483,9 @@ def pod_want(w, data):
     """اختيارات البودكاست من المكتبة (لغة الترجمة، الدبلجة، المقدّم) تنحفظ قبل ما يبدأ الشغل."""
     if (data or {}).get("mode") != "clips": return
     tr = str(data.get("tr") or "").strip()[:5]; dub = str(data.get("dub") or "").strip()[:5]; host = str(data.get("host", "0")) not in ("0", "false", "False", "")
-    cfg = clips_cfg(w); W_ = cfg.get("want") or {}; W_.update({"tr": tr if tr in DUB_LANGS else "", "dub": dub if dub in DUB_LANGS else "", "host": host, "pod": True}); cfg["want"] = W_; os.makedirs(w, exist_ok=True); wj(J(w, "clips.json"), cfg)
+    cfg = clips_cfg(w); W_ = cfg.get("want") or {}; W_.update({"tr": tr if tr in DUB_LANGS else "", "dub": dub if dub in DUB_LANGS else "", "host": host, "pod": True}); cfg["want"] = W_
+    if data.get("identity"): W_["identity"] = str(data["identity"])[:40]   # 4.37: هويته لكل مقاطع الحلقة
+    os.makedirs(w, exist_ok=True); wj(J(w, "clips.json"), cfg)
 def host_cfg(): return {"on": True, "name": "", "char": "robo", "color": "#D97757", **(rj(os.path.join(HOME_CFG, "host.json"), {}) or {})}
 def host_set(**kw):
     h = host_cfg(); h.update({k: v for k, v in kw.items() if v is not None}); os.makedirs(HOME_CFG, exist_ok=True); wj(os.path.join(HOME_CFG, "host.json"), h); return h
@@ -6230,7 +6517,7 @@ def grab_url(url, d, base, prog=None):
         out = J(d, base + ".mp4"); subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", f, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k", out], check=True)
         os.remove(f); f = out
     return f, {"title": meta.get("title") or "", "by": meta.get("uploader") or meta.get("channel") or "", "url": meta.get("webpage_url") or url, "site": meta.get("extractor_key") or "", "dur": meta.get("duration") or 0}
-def job_run(d, src, mode="auto", pick="claude", n=5, ln=None, note="", lang=None):
+def job_run(d, src, mode="auto", pick="claude", n=5, ln=None, note="", lang=None, style="", ident=""):
     """المسار كامل بعد ما يوصل الفيديو (رابط أو ملف): auto = Claude يمنتجه · manual = يتجهّز وتمنتجه بنفسك · clips = لقطات من فيديو طويل."""
     os.makedirs(d, exist_ok=True); job_set(d, stage="grab", pct=0, mode=mode, pick=pick, note=note, err=None, done=False, t0=int(time.time()), src=src, n=n, len=ln)
     try:
@@ -6286,13 +6573,22 @@ def job_run(d, src, mode="auto", pick="claude", n=5, ln=None, note="", lang=None
         if os.path.abspath(f) != os.path.abspath(sm): (shutil.move if os.path.dirname(os.path.abspath(f)) == os.path.abspath(d) else shutil.copy2)(f, sm)
         st = load_studio(d)
         if info.get("title"): hs_of(st)["title"] = info["title"][:80]
-        hs_of(st)["mode"] = "manual" if mode == "manual" else "claude"; wj(J(d, "studio.json"), st)   # 4.18: اختيارك بالمكتبة يحدد وضع الاستوديو
+        hs_of(st)["mode"] = "manual" if mode == "manual" else "claude"   # 4.18: اختيارك بالمكتبة يحدد وضع الاستوديو
+        if style: hs_of(st)["wantStyle"] = style   # 4.37: «موشن جرافيك» من المكتبة
+        if ident: hs_of(st)["identity"] = ident   # 4.37: هويته («none» = بدون)
+        wj(J(d, "studio.json"), st)
         projects_remember(d)
         if mode == "manual":
-            job_set(d, stage="prep"); prep(d, lang=lang); job_set(d, stage="done", done=True)
+            job_set(d, stage="prep"); prep(d, lang=lang)
+            try: ident_apply(d)   # 4.37: يفتح الاستوديو بألوان هويته وخطوطها
+            except Exception: pass
+            job_set(d, stage="done", done=True)
         else:
             task = "فيديو جديد وصل من المكتبة: %s. منتجه كامل حسب SKILL.md من البداية (البث الحي ثم صفحة الأسئلة ثم المونتاج)." % sm
             if note: task += "\nملاحظته: " + note
+            if style == "motion": task += "\nاختار «موشن جرافيك» من المكتبة: الموشن أساسي بهالمقطع، مو زينة. اقرأ engine/references/motion-graphics.md، وبصفحة الأسئلة الأسلوب مختار «موشن جرافيك»."
+            I_ = ident_pick(d, ident or None)
+            if I_: task += "\nهويته «%s» محفوظة: اقرأ %s وصمّم عليها (بصفحة الأسئلة مختارة لحالها)." % (I_.get("name") or I_["slug"], I_["md"]) + ((" " + ident_task(I_)) if I_.get("draft") else "")
             def fallback(w=None):   # Claude مو موجود أو وقف (حد، دخول، نت): نجهّزه تمنتجه بنفسك بدل ما يعلق
                 if ready(d): job_set(d, stage="done", done=True); return
                 studio_mode_set(d, "manual")   # Claude ما قدر يكمّل ← يفتح لك المونتاج اليدوي
@@ -6313,13 +6609,13 @@ def cmd_grab(args):
         return dv
     if not rest: sys.exit(cmd_grab.__doc__)
     into = o("--into"); root = o("--root") or hub_cfg().get("root") or os.path.join(os.path.expanduser("~"), "Documents", "hojas-studio-projects")
-    name = o("--name"); mode = o("--mode", "auto"); pick = o("--pick", "claude"); n = int(o("--n", "5")); ln = o("--len"); note = o("--note", ""); lang = o("--lang")
+    name = o("--name"); mode = o("--mode", "auto"); pick = o("--pick", "claude"); n = int(o("--n", "5")); ln = o("--len"); note = o("--note", ""); lang = o("--lang"); style = o("--style", ""); ident = o("--identity", "")
     src = rest[0]
     if not into:
         base = re.sub(r"[^\w\-]+", "-", name or ("long-" if mode == "clips" else "clip-") + time.strftime("%m%d-%H%M")).strip("-")[:40]
         into = os.path.join(root, base); k = 1
         while os.path.exists(into): into = os.path.join(root, "%s-%d" % (base, k)); k += 1
-    try: d = job_run(os.path.abspath(into), src, mode, pick, n, ln, note, lang)
+    try: d = job_run(os.path.abspath(into), src, mode, pick, n, ln, note, lang, style=style, ident=ident)
     except RuntimeError as e:
         m = str(e)
         if "NEED_YTDLP" in m: sys.exit("أداة السحب yt-dlp مو مثبّتة. استأذن المستخدم أول، ثم: %s -m pip install -U yt-dlp" % PY)
@@ -7004,13 +7300,16 @@ def hub_serve(root, port):
         while os.path.exists(w): w = os.path.join(root, "%s-%d" % (base, k)); k += 1
         return w
     def grab_bg(src, w, data):
-        os.makedirs(J(w, ".hs"), exist_ok=True); mode = data.get("mode") or "auto"
+        os.makedirs(J(w, ".hs"), exist_ok=True); mode = data.get("mode") or "auto"; style = ""
+        if mode == "motion": mode, style = "auto", "motion"   # 4.37: موشن جرافيك = Claude يمنتجه والموشن أساسي
         if mode not in ("auto", "manual", "clips"): mode = "auto"
         job_set(w, stage="grab", pct=0, mode=mode, src=src, done=False, err=None, t0=int(time.time()))
         args = ["grab", src, "--into", w, "--mode", mode, "--pick", data.get("pick") or "claude", "--n", str(int(data.get("n") or 5))]
         if data.get("len"): args += ["--len", str(data["len"])]
         if data.get("note"): args += ["--note", str(data["note"])[:1500]]
         if data.get("lang"): args += ["--lang", str(data["lang"])]
+        if style: args += ["--style", style]
+        if data.get("identity"): args += ["--identity", str(data["identity"])[:40]]
         spawn_bg(args, J(w, ".hs", "job.log")); projects_remember(w) if mode != "clips" else None
     class HB(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"; timeout = 75
@@ -7135,7 +7434,7 @@ def hub_serve(root, port):
             try: self._route()
             except (BrokenPipeError, ConnectionResetError): pass
         def _api(self, a, q):
-            if self.command == "POST" and a != "upload":
+            if self.command == "POST" and a not in ("upload", "identity_file"):
                 try: data = json.loads(self._body() or b"{}")
                 except Exception: data = {}
             else: data = {}
@@ -7167,6 +7466,18 @@ def hub_serve(root, port):
                 if not ytdlp_cmd(): return self._json(200, {"ok": False, "need": "ytdlp", "msg": "أداة السحب yt-dlp مو مثبّتة"})
                 w = new_dir(data.get("name"), "long-" if data.get("mode") == "clips" else "clip-"); pod_want(w, data); grab_bg(m.group(0), w, data)
                 return self._json(200, {"ok": True, "work": w})
+            if a == "identity":   # 4.37: الهويات المحفوظة، وهوية جديدة من وصف وملفات
+                if self.command == "POST":
+                    if data.get("setDefault") is not None: ident_default(str(data.get("setDefault") or ""))
+                    elif str(data.get("name") or "").strip() or str(data.get("text") or "").strip():
+                        try: nm_ = str(data.get("name") or "").strip() or "هويتي"; ident_adopt(data.get("key"), nm_); I_ = ident_new(nm_, str(data.get("text") or ""), default=bool(data.get("default", True)))
+                        except Exception as e: return self._json(400, {"ok": False, "msg": str(e)[:160]})
+                        return self._json(200, {"ok": True, "slug": I_["slug"], "list": ident_list(), "default": ident_default()})
+                return self._json(200, {"ok": True, "list": ident_list(), "default": ident_default()})
+            if a == "identity_file":
+                try: rel = ident_add_file((q.get("name") or ["هويتي"])[0] or "هويتي", (q.get("file") or ["file"])[0], self._body())
+                except ValueError as e: return self._json(400, {"ok": False, "msg": str(e)})
+                return self._json(200, {"ok": True, "file": rel})
             if a == "tokens":   # 4.5: اسألني قبل أي شي يستهلك من حدّي في Claude
                 c = hub_cfg(); c["tokenAsk"] = bool(data.get("ask", True)); wj(hub_cfg_path(), c); return self._json(200, {"ok": True, "tokenAsk": token_ask()})
             if a == "insights":
@@ -7401,7 +7712,7 @@ def hub_serve(root, port):
                 ext = os.path.splitext((q.get("file") or ["v.mov"])[0])[1].lower() or ".mov"; kind = (q.get("kind") or ["edit"])[0]
                 w = os.path.join(root, name); n = 1
                 while os.path.exists(w): w = os.path.join(root, "%s-%d" % (name, n)); n += 1
-                mode0 = (q.get("mode") or ["clips" if kind == "long" else "manual"])[0]
+                mode0 = (q.get("mode") or ["clips" if kind == "long" else "manual"])[0]   # motion = Claude يمنتجه والموشن أساسي
                 os.makedirs(w); dst = J(w, ("long" + ext) if mode0 == "clips" else "upload" + ext); left = int(self.headers.get("Content-Length") or 0)
                 with open(dst, "wb") as f:
                     while left > 0:
@@ -7409,8 +7720,9 @@ def hub_serve(root, port):
                         if not ch: break
                         f.write(ch); left -= len(ch)
                 note = (q.get("note") or [""])[0][:1500]; mode = (q.get("mode") or ["clips" if kind == "long" else "manual"])[0]
-                pod_want(w, {"mode": mode, "tr": (q.get("tr") or [""])[0], "dub": (q.get("dub") or [""])[0], "host": (q.get("host") or ["1"])[0]})
-                grab_bg(dst, w, {"mode": mode, "pick": (q.get("pick") or ["me"])[0], "n": (q.get("n") or ["5"])[0], "len": (q.get("len") or [""])[0], "note": note})
+                idq = (q.get("identity") or [""])[0][:40]
+                pod_want(w, {"mode": mode, "tr": (q.get("tr") or [""])[0], "dub": (q.get("dub") or [""])[0], "host": (q.get("host") or ["1"])[0], "identity": idq})
+                grab_bg(dst, w, {"mode": mode, "pick": (q.get("pick") or ["me"])[0], "n": (q.get("n") or ["5"])[0], "len": (q.get("len") or [""])[0], "note": note, "identity": idq})
                 return self._json(200, {"ok": True, "work": w, "started": True, "msg": ""})
             return self._json(404, {"ok": False})
     def db_loop():   # 4.4: يحدّث قاعدة البيانات بالخلفية (بس المقاطع اللي تغيّرت)
@@ -7456,6 +7768,7 @@ def main():
     if cmd == "platform": return cmd_platform(a[1:])
     if cmd == "tools": print(tools_text()); return
     if cmd == "deps": return cmd_deps(a[1:])
+    if cmd == "identity": return cmd_identity(a[1:])   # 4.37
     if cmd == "notify": return cmd_notify(a[1:])
     if cmd == "style": return cmd_style(a[1:])
     if cmd == "sound": return cmd_sound(a[1:])

@@ -3,7 +3,7 @@
    تقرأ studio.json ← hs  وتتحكم بالكابشن كامل (خط · وزن · حجم · ألوان · مكان · عرض السطر) + سطر الترجمة.
    لو hs.cap.on مو true  ← المحرّك الأصلي يرسم كابشنه كما هو (صفر أثر). */
 (function(){
-  if(window.__hsExt) return; window.__hsExt='4.29';
+  if(window.__hsExt) return; window.__hsExt='4.36';
   const GF={ /* خطوط قوقل والأوزان المتوفرة فعلاً لكل خط */
     'Cairo':[400,500,600,700,800,900],'Tajawal':[400,500,700,800,900],'IBM Plex Sans Arabic':[400,500,600,700],
     'Alexandria':[400,500,600,700,800,900],'El Messiri':[400,500,600,700],'Noto Sans Arabic':[400,500,600,700,800,900],
@@ -342,7 +342,7 @@
       else if(an==='zoom'){ a=ease(k); sc=1.7-0.7*ease(k); }
       else if(an==='fade'){ a=k; }
       else if(an==='glow'){ a=ease(k); sc=1.1-0.1*ease(k); } }
-    if(rt<0.18){ a*=cl(rt/0.18,0,1); }
+    if(rt<0.18&&an!=='none'){ a*=cl(rt/0.18,0,1); }   // 4.37: anim=none قطع نظيف من الطرفين (الصفحات الفاضية ورا بعض ما تبيّن اللي تحتها)
     return {a,dx,dy,sc}; }
   function textBlock(o,t,K){ /* o: text,font,weight,size,color,bg,bgColor,bgOpacity,x,y,width,stroke,strokeColor,shadow,anim */
     const fs=o.size||96, fam=o.font||CAP.font||FONT, wt=nearest(fam,o.weight||900), font=wt+' '+fs+'px "'+fam+'"';
@@ -680,7 +680,8 @@
       else if(V.lay==='split'){ const Hh=Math.round(vrect(t).y); if(Hh<4){ X.restore(); continue; } const cb=L.bgColor||BG; ink=L.color||INK; mut=lumOf(cb)>0.5?'#C9CDD8':'rgba(255,255,255,0.28)';
           X.beginPath(); X.rect(0,0,1080,Hh); X.clip(); X.translate(0,Hh-P.h); X.fillStyle=cb; X.fillRect(0,0,1080,P.h); X.fillStyle=acc; X.fillRect(0,P.h-8,1080,8); }
       else if(V.lay==='over'){ X.globalAlpha=k; const K=enterK(L,t); X.translate(P.x+P.w/2+K.dx,P.y+P.h/2+K.dy); X.scale(K.sc,K.sc); X.translate(-(P.x+P.w/2),-(P.y+P.h/2)); glass(P.x,P.y,P.w,P.h,44); }
-      const _cb=(V.lay==='stage'||V.lay==='full')?(L.bgColor||'#F5F6FA'):V.lay==='split'?(L.bgColor||BG):'#20202A', S={k:V.lay==='split'?1:k,ink:ink,acc:acc,mut:mut,fam:fam,dur:dur,cb:_cb,dim:lumOf(_cb)>0.55?'#5A5F6E':'rgba(255,255,255,0.7)'}; X.globalAlpha=S.k; let top=P.y+56;
+      if(V.lay==='bare'){ const cb0=L.bgColor||'#20202A'; ink=L.color||(lumOf(cb0)>0.5?'#15151C':'#FFFFFF'); mut=lumOf(cb0)>0.5?'#C9CDD8':'rgba(255,255,255,0.28)'; }   // 4.37: على الصفحة الفاضية (layout=bare) الكتابة بلونها أو تعاكس الخلفية
+      const _cb=(V.lay==='stage'||V.lay==='full')?(L.bgColor||'#F5F6FA'):V.lay==='split'?(L.bgColor||BG):V.lay==='bare'?(L.bgColor||'#20202A'):'#20202A', S={k:V.lay==='split'?1:k,ink:ink,acc:acc,mut:mut,fam:fam,dur:dur,cb:_cb,dim:lumOf(_cb)>0.55?'#5A5F6E':'rgba(255,255,255,0.7)'}; X.globalAlpha=S.k; let top=P.y+56;
       if(L.title&&V.lay!=='bare'){ X.font='800 40px '+fam; const tw=X.measureText(L.title).width+76, ty=(V.lay==='stage'||V.lay==='full')?P.y:P.y+70; X.fillStyle='#15151C'; rr(540-tw/2,ty-36,tw,72,36); X.fill(); vtx(L.title,540,ty+2,'800 40px '+fam,'#FFFFFF'); top=ty+36+40; }
       const R0={x:P.x+56,y:top,w:P.w-112,h:P.y+P.h-56-top-(V.lay==='split'?8:0)};
       try{ (VK[L.kind]||VK.pctdots)(V.lay==='bare'?P:R0,lt,L,S); }catch(e){ if(!window.__hsVE){ window.__hsVE=1; console.error('hs viz '+L.kind+': '+e.message); } }
@@ -1691,7 +1692,8 @@
   /* ترجيع وقبل وبعد: الفريم يترسم من لحظة ثانية (hsWarp يقول للاستوديو والتصدير أي فريم يحمّلون) */
   function warpAt(t){ if(t>=VEND) return null; for(const L of (HSX.layers||[])){ if(L.type!=='mg'||L.off||t<L.s||t>=L.e) continue;
       if(L.kind==='rewind'){ const back=Math.max(0.5,+L.back||4), k=(t-L.s)/Math.max(0.1,L.e-L.s); return {L,kind:'rewind',t2:Math.max(0,L.s-back*k)}; }
-      if(L.kind==='ba') return {L,kind:'ba',t2:Math.max(0,Math.min(VEND-0.05,(+L.from||0)+(t-L.s)))}; } return null; }
+      if(L.kind==='ba') return {L,kind:'ba',t2:Math.max(0,Math.min(VEND-0.05,(+L.from||0)+(t-L.s)))};
+      if(L.kind==='freeze') return {L,kind:'freeze',t2:Math.max(0,Math.min(VEND-0.05,+L.s))}; } return null; }
   window.hsWarp=t=>{ try{ const w=warpAt(t); return w?w.t2:t; }catch(e){ return t; } };
   function drawRW(x,y){ X.fillStyle='#FFFFFF'; for(const o of [0,40]){ X.beginPath(); X.moveTo(x+o,y); X.lineTo(x+o+40,y-26); X.lineTo(x+o+40,y+26); X.closePath(); X.fill(); } }
   function vhsOver(t,L){ const cv=X.canvas, sx=cv.width/1080, sy=cv.height/1920, f=Math.floor(t*30);
@@ -1721,8 +1723,72 @@
   if(typeof _dvX==='function') window.drawVideo=function(t){ const V=HSX.vxf; if(!V||t>=VEND||(!+V.x&&!+V.y&&(+V.s||1)===1)) return _dvX.apply(this,arguments);
     const s=Math.max(0.2,Math.min(4,+V.s||1)); X.save(); X.fillStyle='#000'; X.fillRect(0,0,1080,1920); X.translate(540+(+V.x||0),960+(+V.y||0)); X.scale(s,s); X.translate(-540,-960); try{ return _dvX.apply(this,arguments); } finally { X.restore(); } };
   const _dw28=window.draw;
-  window.draw=function(t){ let w=null; try{ w=warpAt(t); }catch(e){} if(!w) return _dw28(t);
+  window.draw=function(t){ let w=null; try{ w=warpAt(t); }catch(e){} if(!w||w.kind==='freeze') return _dw28(t);   /* 4.35: التجميد يرسم بوقته (الكابشن يكمل) والفريم بس واقف */
     _dw28(w.t2); try{ if(w.kind==='rewind') vhsOver(t,w.L); else baFrame(t,w); }catch(e){ if(!window.__hsWE){ window.__hsWE=1; console.error('hs warp: '+e.message); } } };
+
+  /* ═══ 4.35: تجميد اللقطة (Freeze frame): الفيديو يوقف على فريم أول الطبقة، وصوتك والكابشن يكملون.
+     أربع أشكال: flash فلاش وتقريب على الوجه مع اسم وسهم · photo تصير صورة مطبوعة فوق نفسها مغبّشة · comic كوميكس بنقط وصندوق أصفر · film أبيض وأسود بحبيبات وأشرطة ونص ينكتب.
+     hsWarp يقول للمعاينة والتصدير أي فريم يحمّلون (نفس الترجيع)، والرسم هنا فوق الفيديو وتحت الكابشن */
+  MGK.freeze=()=>{};
+  const FRZ_ST=['flash','photo','comic','film']; window.__hsFreeze=FRZ_ST;
+  function frzAt(t){ if(t>=VEND) return null; for(const L of (HSX.layers||[])){ if(L.type==='mg'&&L.kind==='freeze'&&!L.off&&t>=L.s&&t<L.e) return L; } return null; }
+  function frzFace(L){ const f=faceAt(L.s), V=HSX.vxf||{}, s=+V.s||1; if(!f) return {x:540,y:860,h:420};
+    return {x:cl(540+(f[1]*1080-540)*s+(+V.x||0),180,900), y:cl(960+(f[2]*1920-960)*s+(+V.y||0),320,1480), h:cl(f[4]*1920*s,180,900)}; }
+  let _FZ=null, _HT=null;
+  function frzSnap(){ const cv=X.canvas; if(!_FZ) _FZ=mkCv(cv.width,cv.height); if(_FZ.width!==cv.width||_FZ.height!==cv.height){ _FZ.width=cv.width; _FZ.height=cv.height; } const g=_FZ.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,_FZ.width,_FZ.height); _di.call(g,cv,0,0); return _FZ; }
+  function frzImg(f,x,y,w,h){ X.filter=f||'none'; _di.call(X,_FZ,0,0,_FZ.width,_FZ.height,x,y,w,h); X.filter='none'; }
+  function frzArrow(x0,y0,x1,y1,k,col){ if(k<=0) return; const mx=(x0+x1)/2+(y1-y0)*0.28, my=(y0+y1)/2-(x1-x0)*0.28, P=[]; for(let i=0;i<=24;i++){ const u=i/24*k, a=(1-u)*(1-u), b=2*(1-u)*u, c=u*u; P.push([a*x0+b*mx+c*x1,a*y0+b*my+c*y1]); }
+    X.save(); X.strokeStyle=col; X.lineWidth=8; X.lineCap='round'; X.lineJoin='round'; mgSh(8,0.35); X.beginPath(); P.forEach((p,i)=>i?X.lineTo(p[0],p[1]):X.moveTo(p[0],p[1])); X.stroke();
+    if(k>=0.98){ const [ax,ay]=P[P.length-1], [bx,by]=P[P.length-3], an=Math.atan2(ay-by,ax-bx); X.beginPath(); X.moveTo(ax-34*Math.cos(an-0.5),ay-34*Math.sin(an-0.5)); X.lineTo(ax,ay); X.lineTo(ax-34*Math.cos(an+0.5),ay-34*Math.sin(an+0.5)); X.stroke(); } X.restore(); }
+  function frzTag(L,t,F,acc,fam){ const txt=String(L.label||'').trim(); if(!txt) return; const lt=t-L.s, k=spr(PR(lt,0.12,0.5),0.7), ko=PR(t,L.e-0.25,0.25); if(k<=0) return;
+    X.font=mgF(900,66,fam); const bw=mw(txt)+80, bh=112, up=F.y-F.h*0.78-bh/2-60>230, cy=up?F.y-F.h*0.78-bh/2-60:Math.min(1500,F.y+F.h*0.85+bh/2+40), cx=cl(F.x+(F.x>540?-120:120),bw/2+50,1030-bw/2);
+    X.save(); X.globalAlpha=1-p2i(ko); X.translate(cx,cy); X.rotate(-0.05); X.scale(0.6+0.4*k,0.6+0.4*k); X.fillStyle=acc; rr(-bw/2,-bh/2,bw,bh,bh/2); X.fill();
+    X.fillStyle='#FFFFFF'; X.textAlign='center'; X.textBaseline='middle'; X.direction=hasAr(txt)?'rtl':'ltr'; X.fillText(txt,0,4); X.restore();
+    X.save(); X.globalAlpha=1-p2i(ko); const sx=cx+(F.x>cx?bw*0.3:-bw*0.3), sy=up?cy+bh/2+14:cy-bh/2-14, ex=F.x+(F.x>cx?-F.h*0.2:F.h*0.2), ey=up?F.y-F.h*0.5:F.y+F.h*0.45; frzArrow(sx,sy,ex,ey,PR(lt,0.3,0.35),'#FFFFFF'); X.restore(); }
+  function frzFlash(L,lt){ if(L.flash===false) return; const a=Math.pow(1-PR(lt,0,0.24),2)*0.95; if(a<=0.01) return; X.save(); X.setTransform(1,0,0,1,0,0); X.globalAlpha=a; X.fillStyle='#FFFFFF'; X.fillRect(0,0,1080,1920); X.restore(); }
+  function frzType(str,k){ const ch=[...String(str||'')]; return ch.slice(0,Math.round(ch.length*cl(k,0,1))).join(''); }
+  function frzDraw(L,t){ const st=FRZ_ST.includes(L.style)?L.style:'flash', lt=t-L.s, D=Math.max(0.3,L.e-L.s), ko=PR(t,L.e-0.28,0.28), acc=L.accent||lookAcc(), fam=mgFam(L);
+    frzSnap(); X.save(); X.setTransform(1,0,0,1,0,0); X.globalAlpha=1; X.shadowColor='transparent';
+    if(st==='flash'){ const F=frzFace(L), zA=L.zoom==null?0.08:cl(+L.zoom,0,0.4), z=1+zA*sio(PR(lt,0,Math.max(0.3,D-0.2)))*(1-sio(ko));
+      X.fillStyle='#000'; X.fillRect(0,0,1080,1920); X.save(); X.translate(F.x,F.y); X.scale(z,z); X.translate(-F.x,-F.y); frzImg('saturate(0.8) contrast(1.08)',0,0,1080,1920); X.restore();
+      frzTag(L,t,{x:F.x,y:F.y,h:F.h*z},acc,fam); }
+    else if(st==='photo'){ const k=spr(PR(lt,0.06,0.55),0.78)*(1-sio(ko)), sc=lerp(1,0.7,k), rot=lerp(0,(L.tilt==null?-4:+L.tilt)*Math.PI/180,k), m=34, mb=250;
+      X.fillStyle='#000'; X.fillRect(0,0,1080,1920); X.save(); X.translate(540,960); X.scale(1.12,1.12); X.translate(-540,-960); frzImg('blur(20px) brightness(0.45) saturate(0.6)',0,0,1080,1920); X.restore();
+      X.save(); X.translate(540,960-(mb-m)/2*sc*k); X.rotate(rot); X.scale(sc,sc); X.globalAlpha=1; if(k>0.02){ X.save(); X.globalAlpha=Math.min(1,k*1.4); mgSh(14,0.4); X.fillStyle='#F7F5F0'; X.fillRect(-540-m,-960-m,1080+2*m,1920+m+mb); mgNo(); X.restore(); }
+      X.save(); X.beginPath(); X.rect(-540,-960,1080,1920); X.clip(); frzImg('saturate(0.92) contrast(1.05) sepia(0.08)',-540,-960,1080,1920); X.restore();
+      const txt=String(L.label||'').trim(), sub=String(L.sub||'').trim(), kt=PR(lt,0.4,0.4)*(1-sio(ko));
+      if(txt&&kt>0){ X.globalAlpha=kt; X.fillStyle='#1F1F1D'; X.textAlign='center'; X.textBaseline='middle'; X.font=mgF(800,sub?100:116,fam); X.direction=hasAr(txt)?'rtl':'ltr'; X.fillText(txt,0,960+(mb-m)/2+(sub?-40:0));
+        if(sub){ X.font=mgF(600,62,fam); X.fillStyle='#6E6A63'; X.direction=hasAr(sub)?'rtl':'ltr'; X.fillText(sub,0,960+(mb-m)/2+62); } }
+      X.restore(); }
+    else if(st==='comic'){ const k=spr(PR(lt,0.08,0.45),0.62), a=1-sio(ko);
+      frzImg('contrast(1.3) saturate(1.4)',0,0,1080,1920);
+      if(!_HT){ const c=mkCv(18,18), g=c.getContext('2d'); g.fillStyle='rgba(0,0,0,0.5)'; g.beginPath(); g.arc(9,9,3.4,0,6.2832); g.fill(); _HT=X.createPattern(c,'repeat'); }
+      X.save(); X.globalAlpha=0.55*a; X.globalCompositeOperation='multiply'; X.fillStyle=_HT; X.fillRect(0,0,1080,1920); X.restore();
+      X.save(); X.globalAlpha=a; X.strokeStyle='#111'; X.lineWidth=18; X.strokeRect(34,34,1012,1852); X.restore();
+      const txt=String(L.label||'').trim(), sub=String(L.sub||'').trim();
+      const box=(s,cx,cy,rot,fs,bg)=>{ X.font=mgF(900,fs,fam); const bw=Math.min(980,mw(s)+70), bh=fs*1.7; X.save(); X.globalAlpha=a; X.translate(cx,cy); X.rotate(rot); X.scale(0.5+0.5*k,0.5+0.5*k); X.fillStyle=bg; X.fillRect(-bw/2,-bh/2,bw,bh); X.lineWidth=7; X.strokeStyle='#111'; X.strokeRect(-bw/2,-bh/2,bw,bh);
+        X.fillStyle='#111'; X.textAlign='center'; X.textBaseline='middle'; X.direction=hasAr(s)?'rtl':'ltr'; X.fillText(s,0,fs*0.06); X.restore(); return bw; };
+      if(txt){ X.font=mgF(900,64,fam); const w0=Math.min(980,mw(txt)+70); box(txt,1080-60-w0/2,(L.y==null?0.1:+L.y)*1920+60,-0.03,64,'#FFE14D'); }
+      if(sub){ X.font=mgF(900,50,fam); const w1=Math.min(980,mw(sub)+70); box(sub,60+w1/2,1540,0.025,50,'#FFFFFF'); } }
+    else { const k=sio(PR(lt,0,0.4))*(1-sio(ko)), f=Math.floor(t*30), bar=230*k;
+      frzImg('grayscale(1) contrast(1.18) brightness(0.96)',0,0,1080,1920);
+      X.save(); X.globalAlpha=0.5; for(let i=0;i<700;i++){ const g=H28(i,f)>0.5?255:0; X.fillStyle='rgba('+g+','+g+','+g+',0.22)'; X.fillRect(H28(i,f+1)*1080,H28(i,f+2)*1920,2+H28(i,f+3)*3,2+H28(i,f+4)*3); } X.restore();
+      X.save(); X.globalAlpha=0.35; X.fillStyle='#FFFFFF'; for(let j=0;j<2;j++){ if(H28(j,f+9)<0.45) continue; X.fillRect(H28(j,f+7)*1080,0,2,1920); } X.restore();
+      X.fillStyle='#000'; X.fillRect(0,0,1080,bar); X.fillRect(0,1920-bar,1080,bar);
+      if(k>0.05){ X.save(); X.globalAlpha=k; X.fillStyle='#F2F2F2'; X.fillRect(74,bar-128,14,52); X.fillRect(100,bar-128,14,52); X.restore();
+        const txt=String(L.label||'').trim(), sub=String(L.sub||'').trim(), kt=PR(lt,0.3,Math.max(0.3,Math.min(1.1,D*0.45)));
+        X.save(); X.globalAlpha=k; X.textBaseline='middle'; X.textAlign='center';
+        if(txt){ X.font=hasAr(txt)?mgF(700,58,fam):'600 54px "IBM Plex Mono", monospace'; X.direction=hasAr(txt)?'rtl':'ltr'; X.fillStyle='#F2F2F2'; X.fillText(frzType(txt,kt),540,1920-bar+(sub?82:bar/2)); }
+        if(sub){ X.font=hasAr(sub)?mgF(500,38,fam):'500 36px "IBM Plex Mono", monospace'; X.direction=hasAr(sub)?'rtl':'ltr'; X.fillStyle='#9A9A9A'; X.fillText(frzType(sub,PR(lt,0.3+D*0.3,0.5)),540,1920-bar+156); }
+        X.restore(); } }
+    X.restore(); frzFlash(L,lt); }
+  const _dvF=window.drawVideo;
+  if(typeof _dvF==='function') window.drawVideo=function(t){ const L=frzAt(t); if(!L) return _dvF.apply(this,arguments);
+    const t0=TNOW; TNOW=+L.s; let r;   /* قص الوجه على نفس الفريم الواقف */
+    try{ r=_dvF.apply(this,arguments); } finally { TNOW=t0; }
+    let full=true; try{ const R=vrect(t); full=R.w>=1070&&R.h>=1900; }catch(e){}
+    try{ if(full) frzDraw(L,t); else frzFlash(L,t-L.s); }catch(e){ if(!window.__hsFZE){ window.__hsFZE=1; console.error('hs freeze: '+e.message); } }
+    return r; };
 
   /* لقطة بي-رول بوضع «جوال»: المقطع داخل آيفون يتحرك، وتحته صاحب المقطع */
   function phoneClip(b,t){ const lt=t-b.s, im=brFrame(b.k,lt,b.speed||1), ko=PR(t,b.e-0.3,0.3), ki=spr(PR(lt,0,0.7),0.75), acc=lookAcc(), pip=b.pip!==false;

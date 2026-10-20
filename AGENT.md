@@ -46,6 +46,8 @@
 | خط كرت الختام ونصوصه | `set . outro.font="Lalezar" outro.cta="تابعني"` |
 | أسلوب المستخدم المتعلَّم | `style show` (بلا مجلد) |
 | ورق متحرك (اقرأ engine/references/styles.md) | `kinetic . auto --deco both` · `layer . set L12 text="سطر\n* كبير\n> صندوق" card=pill cardText="…"` |
+| موشن جرافيك (اقرأ engine/references/motion-graphics.md كامل) | القالب من جدول قسم 3 (مقاطع حسابه MG-05)، وأوامر «البناء بـ hs» فيه، وفحص قسم 7 قبل ما تقول خلصت، والصفحة الفاضية بقسم 6. أساسي لأي طلب حركة، إلا لو قال ثابت |
+| هويته (اقرأ engine/references/identity.md) | `identity show` (بلا مجلد) قبل أي تصميم · `identity apply .` · لو مسودة: اكتب identity.md ثم `identity check <الاسم>` |
 | الدحيح (اقرأ engine/references/styles.md) | `dahih . on --title "…" --tag "#…"` · `dahih . bg navy --at 20` · `layer . add type=desk kind=number n=24 sub="ساعة متاح" s=6 e=9 x=0.3 y=0.45` |
 
 القيم المتاحة:

@@ -1136,12 +1136,13 @@ let CTX=[];
 function ctxItems(){ const cut={l:t('ctxCut'),k:'S',f:cutHere}, del={l:t('ctxDel'),k:'Del',f:delSel,bad:true}, it=[];
   if(!SEL) return [cut,{l:t('ctxNote'),k:'M',f:openNote}];
   if(SEL.kind==='layer'){ const L=selLayer(); if(!L) return [cut];
-    return [cut,{l:t('duplicate'),k:'Ctrl+D',f:dupSel},{l:t(L.off?'ctxShow':'ctxHide'),f:()=>{ snap(); L.off=!L.off; if(!L.off) delete L.off; buildTL(); live(); renderRight(); }},{l:(layerPinned(L)?'✓ ':'')+t('ctxPin'),f:pinToggle},'-',{l:t('ctxAsk'),f:()=>{ if(uiMode()==='manual') askOpen(); else { RTAB='claude'; markTabs(); renderRight(); } }},'-',del]; }
+    return [cut,{l:t('ctxSwap'),f:()=>swapNote(L.s,lname(L))},{l:t('duplicate'),k:'Ctrl+D',f:dupSel},{l:t(L.off?'ctxShow':'ctxHide'),f:()=>{ snap(); L.off=!L.off; if(!L.off) delete L.off; buildTL(); live(); renderRight(); }},{l:(layerPinned(L)?'✓ ':'')+t('ctxPin'),f:pinToggle},'-',{l:t('ctxAsk'),f:()=>{ if(uiMode()==='manual') askOpen(); else { RTAB='claude'; markTabs(); renderRight(); } }},'-',del]; }
   if(SEL.kind==='cap') return [cut,{l:t('ctxEditText'),f:()=>{ LTAB='text'; markTabs(); renderLeft(); const el=$('#lbody .card[data-card="'+SEL.id+'"]'); if(el){ el.scrollIntoView({block:'center'}); el.classList.add('on'); } }},'-',{l:t('ctxDelCap'),k:'Del',f:delSel,bad:true}];
   if(SEL.kind==='video'||SEL.kind==='audio'){ const s=SEL.s, e=SEL.e;
-    return [cut,'-',{l:t('ctxDelShot'),f:()=>{ askRemove({ranges:[[r3(s),r3(e)]]},fmt(s)+' ← '+fmt(e)); },bad:true},{l:t('ctxDelPic'),f:()=>{ snap(); blankAdd(s,e); toast(t('delVideoDone')); }},{l:t('ctxDelAud'),f:()=>{ snap(); rngSet(s,e,0); toast(t('delAudioDone')); renderRight(); }}]; }
+    return [cut,{l:t('ctxSwapShot'),f:()=>swapNote(s,fmt(s)+' ← '+fmt(e))},'-',{l:t('ctxDelShot'),f:()=>{ askRemove({ranges:[[r3(s),r3(e)]]},fmt(s)+' ← '+fmt(e)); },bad:true},{l:t('ctxDelPic'),f:()=>{ snap(); blankAdd(s,e); toast(t('delVideoDone')); }},{l:t('ctxDelAud'),f:()=>{ snap(); rngSet(s,e,0); toast(t('delAudioDone')); renderRight(); }}]; }
   if(SEL.kind==='sfx') return [cut,{l:t('ctxListen'),f:()=>{ const b=document.createElement('button'); b.dataset.sxplay='1'; audioClick(b); }},'-',del];
   if(SEL.kind==='hook') return [{l:t('hookOff'),f:delSel,bad:true}];
+  if(SEL.kind==='broll'){ const b=objOf('broll',SEL.id); if(b) return [cut,{l:t('ctxSwap'),f:()=>swapNote(b.s,b.k)},'-',del]; }
   return [cut,del]; }
 function ctxTitle(){ if(!SEL) return fmt(T); if(SEL.kind==='layer'){ const L=selLayer(); return L?lname(L):''; } if(SEL.kind==='cap') return key(ST.caps.cards[+SEL.id]||{w:[]}); if(SEL.kind==='video'||SEL.kind==='audio') return fmt(SEL.s)+' ← '+fmt(SEL.e); if(SEL.kind==='hook') return t('hookClip'); return ''; }
 $('#scroller').addEventListener('contextmenu',e=>{ if(!ST) return; e.preventDefault(); if(playing) stop(); const x=tlTime(e), el=e.target.closest('.clip[data-kind]');
@@ -1185,6 +1186,9 @@ document.addEventListener('click',async e=>{ const b=e.target.closest('[data-qlv
   if(b.dataset.qlv){ QLV=b.dataset.qlv; renderRight(); return; }
   if(b.id==='qCmp'){ const lv=(QLV&&QLV!=='off')?QLV:'light', o=$('#qOut'); if(o) o.innerHTML='<p class="hint">'+t('qWait')+'</p><img alt="" style="width:100%;border-radius:10px;margin-top:6px" src="/hs/quality_preview?t='+T.toFixed(2)+'&level='+lv+'&v='+Date.now()+'"><div class="row" style="justify-content:space-between;font-size:12px;color:var(--mut)"><span>'+t('qBefore')+'</span><span>'+t('qAfter',t(lv==='strong'?'qStrong':'qLight'))+'</span></div>'; return; }
   if(b.id==='qApply'){ const lv=QLV||'off'; hs().enhance={level:lv}; await save(); const r=await api('/hs/quality',{level:lv}); if(!r.ok){ toast(r.msg||t('busyJob')); return; } stLoader('rebuild',t('qWorking')); pollJob(async()=>{ try{ QLV=null; await reloadLite(); toast(t('qDone')); } finally{ stLoaderHide(); } }); } });
+
+/* ───── 4.35: «ما عجبتني، خلّ Claude يبدّلها»: ملاحظة جاهزة عند وقتها، تزيد عليها ليش وتحفظها ───── */
+async function swapNote(t0,label){ if(playing) stop(); seek(Math.max(0,+t0||0)+0.05); await new Promise(r=>setTimeout(r,250)); openNote(); const tx=$('#nTx'); if(tx){ tx.value=t('swapNoteTx',label); tx.focus(); tx.setSelectionRange(tx.value.length,tx.value.length); } }
 
 /* ───── 4.32: الأقسام بأزرار فوق: تشوف قسم واحد بدل ما تنزل وتدوّر ───── */
 const ELGROUPS=[['media',['binSearch','binGen','binClips','binImages']],['text',['binIntros','binHooks']],['mg',['binMg']],['viz',['binViz']],['cards',['binSplit']],['chars',['binChars']],['person',['binPerson']],

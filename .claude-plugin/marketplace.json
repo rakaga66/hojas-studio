@@ -10,7 +10,7 @@
     {
       "name": "hojas-studio",
       "source": "./",
-      "description": "Arabic video editing studio for Claude Code, with auto-updates."
+      "description": "Arabic video editing studio for Claude Code on your computer: captions, motion, podcast clips and a timeline. Install from Claude Code (terminal or the desktop Code tab), not the claude.ai Plugins page."
     }
   ]
 }

@@ -186,9 +186,10 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-si
     <li><div><b>ثبّت البلقن</b><p dir="ltr" style="text-align:left"><code>/plugin install hojas-studio@hojas</code></p></div></li>
     <li><div><b>شغّل التحديث التلقائي (مرة وحدة)</b><p>اكتب <code>/plugin</code> ثم اختر <b>Marketplaces</b> ثم <b>hojas</b> ثم <b>Enable auto-update</b>. من بعدها كل نسخة جديدة تنزل لحالها، والمكتبة تنتقل لها أول ما تفتح Claude Code. مشاريعك وإعداداتك محفوظة في <code>~/.hojas-studio</code> والتحديث ما يلمسها.</p></div></li>
     <li><div><b>اقفل Claude Code وافتحه من جديد</b><p>عشان يتعرّف على الأداة.</p></div></li>
-    <li><div><b>خلّ Claude يفحص جهازك</b><span class="say">افحص أدوات Hojas Studio</span><p>يقول لك وش موجود ووش ناقص (ffmpeg وPython مع Whisper وNode وكروم، وGit for Windows على ويندوز). وافق على اللي يحتاجه، وهو يثبّته ويتأكد إنه اشتغل.</p></div></li>
+    <li><div><b>خلّ Claude يفحص جهازك</b><span class="say">افحص أدوات Hojas Studio</span><p>يقول لك وش موجود ووش ناقص (ffmpeg وPython مع Whisper وNode ومكتبة التصدير وكروم، وGit for Windows على ويندوز). وافق على اللي يحتاجه، وهو يثبّته ويتأكد إنه اشتغل.</p></div></li>
     <li><div><b>ابدأ أول مقطع</b><span class="say">منتج هذا المقطع لتيك توك: C:\Users\you\Videos\clip.mp4</span></div></li>
   </ol>
+  <div class="note"><b>مهم: ثبّته من Claude Code على جهازك.</b> من الطرفية (اكتب <code>claude</code>)، أو من تطبيق Claude بتبويب <b>Code</b> وجلسة <b>على جهازك</b> (مو سحابة)، وتضغط <b>+</b> ثم <b>Add plugins</b>. صفحة Plugins بموقع claude.ai أو المحادثة العادية ما تشغّله، لأن الأداة تشتغل على جهازك (الفيديو والتفريغ والاستوديو)، وتطلع لك رسالة «This plugin isn't for this environment».</div>
   <h3>طريقة ثانية: سكل بـ git</h3>
   <p>لو تبيها سكل عادي بدل البلقن، الصق هذا السطر في Claude Code:</p>
   <span class="say" dir="ltr" style="text-align:left">Install this skill: git clone https://github.com/rakaga66/hojas-studio ~/.claude/skills/hojas-studio</span>
@@ -480,6 +481,12 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-si
     <dt>الجوال يعلّق أو بلا صوت</dt><dd>حدّث الصفحة مرة. المعاينة هناك أخف، والتصدير ما يتأثر.</dd>
     <dt>الخط ما تغيّر</dt><dd>خطوط Google تحتاج نت. بدون نت ارفع ملف الخط من «الملفات».</dd>
     <dt>التجميع يفشل على ويندوز</dt><dd>لازم Git for Windows. اطلب من Claude «افحص أدوات Hojas Studio».</dd>
+    <dt>«This plugin isn't for this environment»</dt><dd>ثبّته من Claude Code على جهازك، مو من صفحة Plugins بموقع claude.ai. شوف «التثبيت خطوة بخطوة».</dd>
+    <dt>«OAuth session expired» أو «Failed to authenticate»</dt><dd>تسجيل دخولك بـ Claude Code انتهى. افتح الطرفية واكتب <code>claude</code> ثم <code>/login</code>، وبعدها اضغط «أعد» على المقطع.</dd>
+    <dt>«Access is denied [WinError 5]»</dt><dd>انحل بنسخة 4.33. حدّث البلقن (افتح جلسة جديدة، أو قل «حدّث بلقن Hojas»).</dd>
+    <dt>«ما لقيت مكتبة التصدير»</dt><dd>قل لـ Claude «ثبّت مكتبة التصدير». يستأذنك وينزّلها مرة وحدة (8 ميقا) وتبقى مع كل تحديث.</dd>
+    <dt>الصوت بالمقطع النهائي أوطى من باقي المقاطع</dt><dd>كانت معايرة الصوت تفشل على ويندوز، وانحلت بنسخة 4.35. حدّث وصدّر من جديد.</dd>
+    <dt>أبي أحذف مقطع</dt><dd>من المكتبة افتح المقطع واضغط «احذف المقطع». ينتقل لمجلد <code>.trash</code> بمجلد مشاريعك، وترجّعه من هناك لو غيّرت رأيك.</dd>
     <dt>ChatGPT أو Gemini طلب تسجيل دخول</dt><dd>سجّل دخولك بمتصفحك. Claude ما يتجاوز تسجيل الدخول ولا حدود حسابك، والطلب ينتظرك.</dd>
   </dl>
 </section>

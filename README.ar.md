@@ -119,6 +119,8 @@
 
    وشغّل التحديث التلقائي مرة وحدة: `/plugin` ← **Marketplaces** ← **hojas** ← **Enable auto-update**. بعدها كل نسخة جديدة توصلك لحالها، والمكتبة تنتقل لها أول ما تفتح Claude Code. مشاريعك وإعداداتك وقاعدة بياناتك في `~/.hojas-studio` وما يلمسها أي تحديث.
 
+   **مهم:** ثبّته من Claude Code على جهازك (الطرفية، أو تبويب Code بتطبيق Claude بجلسة على جهازك). صفحة Plugins بموقع claude.ai ما تشغّله وتطلع «This plugin isn't for this environment».
+
    تبيه سكل عادي؟ `git clone https://github.com/rakaga66/hojas-studio ~/.claude/skills/hojas-studio` يشتغل بعد، وتحدّثه بـ«حدّث Hojas Studio».
 3. اقفل Claude Code وافتحه، واكتب له: «افحص أدوات Hojas Studio».
    يقول لك وش الناقص (ffmpeg، Python مع Whisper، Node ومكتبة التصدير، Chrome، وعلى ويندوز Git for Windows)، ليش يحتاجه ومن وين ينزل، وما يثبّت شي إلا بموافقتك.

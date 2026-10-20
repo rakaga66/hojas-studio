@@ -1,7 +1,7 @@
 {
  "name": "hojas-studio",
- "version": "4.34",
- "description": "Hojas Studio: Arabic talking-head video editing with Claude Code. Captions, explainer cards, a browser timeline, clips from any link, and a local library you can search.",
+ "version": "4.35",
+ "description": "Hojas Studio: Arabic talking-head and podcast video editing with Claude Code, all on your computer. Auto captions, motion graphics, keyframes, podcast clips that keep the full idea, a browser timeline studio, and a local library.",
  "author": {
   "name": "Hojas (Rakan Alzahrani)"
  },
@@ -13,6 +13,9 @@
   "arabic",
   "captions",
   "editing",
-  "montage"
+  "montage",
+  "podcast",
+  "motion-graphics",
+  "timeline"
  ]
 }

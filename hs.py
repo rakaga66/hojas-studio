@@ -80,7 +80,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.34"
+VERSION = "4.35"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -2151,8 +2151,40 @@ def encode(work, S, log, out_final, out_master, mix):
          "-maxrate", "10M", "-bufsize", "20M", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-color_range", "tv", "-colorspace", "bt709",
          "-color_primaries", "bt709", "-color_trc", "bt709", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", "-y", out_final], log)
     log("معايرة الصوت…"); env = dict(os.environ); env["BG_GAIN"] = str(bg_lv); env["BG_FADE_IN"], env["BG_FADE_OUT"] = bg_fades(mix)
-    r = run(["bash", os.path.join(S, "06b_master.sh"), work, out_final, out_master], log, cwd=work, check=False, env=env)
-    if not os.path.exists(out_master): log("المعايرة ما اشتغلت — أسلّم الملف بلا معايرة"); shutil.copy(out_final, out_master)
+    try: master_audio(work, out_final, out_master, log, float(env["BG_GAIN"]), env["BG_FADE_IN"], env["BG_FADE_OUT"])   # 4.35: بدون bash
+    except Exception as e: log("المعايرة ما اشتغلت (%s) — أسلّم الملف بلا معايرة" % str(e)[:160])
+    if not os.path.exists(out_master): shutil.copy(out_final, out_master)
+def master_audio(work, src, out, log=print, gain=0.28, fade_in=1.0, fade_out=1.4, lufs=-14.0):
+    """4.35: معايرة الصوت لـ -14 LUFS + الصوت بالخلفية (bg-audio.*) ينخفض وقت الكلام. نفس 06b_master.sh بس بايثون وffmpeg مباشرة،
+    لأن ويندوز يشغّل bash حق WSL بدل Git Bash (يدوّر System32 قبل PATH) فكانت المعايرة تفشل والمقطع يطلع بدونها."""
+    dur = ffdur(src) or 0.0
+    if dur <= 0: raise RuntimeError("ما قدرت أقرا مدة " + src)
+    bg = next((J(work, n + "." + e) for n in ("bg-audio", "bg", "sound", "music") for e in ("mp3", "m4a", "wav", "aac") if os.path.isfile(J(work, n + "." + e))), None)
+    fi = round(min(max(float(fade_in or 0), 0.01), max(0.01, dur / 2)), 3); fo_d = round(min(max(float(fade_out or 0), 0.01), max(0.01, dur)), 3); fo = max(0.0, round(dur - fo_d, 3))
+    mix = J(work, ".master-mix.wav"); nrm = J(work, ".master-norm.wav")
+    try:
+        if bg:
+            log("الخلفية الصوتية: %s (تنخفض وقت الكلام)" % os.path.basename(bg))
+            fc = ("[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[v0][sc];"
+                  "[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=%s,atrim=0:%s,asetpts=N/SR/TB,afade=t=in:st=0:d=%s,afade=t=out:st=%s:d=%s[m];"
+                  "[m][sc]sidechaincompress=threshold=0.035:ratio=9:attack=8:release=320[md];[v0][md]amix=inputs=2:duration=first:normalize=0[a]") % (gain, dur, fi, fo, fo_d)
+            subprocess.run(["ffmpeg", "-v", "error", "-nostats", "-i", src, "-stream_loop", "-1", "-i", bg, "-filter_complex", fc, "-map", "[a]", "-ac", "2", "-ar", "48000", "-y", mix], check=True)
+        else: subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "2", "-ar", "48000", "-y", mix], check=True)
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", mix, "-af", "loudnorm=I=%s:TP=-1.5:LRA=11:print_format=json" % lufs, "-f", "null", "-"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        ms = re.findall(r"\{[^{}]*input_i[^{}]*\}", r.stderr, re.S); M = json.loads(ms[-1]) if ms else None
+        ii = float(M["input_i"]) if M and M.get("input_i") not in (None, "-inf", "inf") else None
+        if M and ii is not None and ii > -70:
+            log("الصوت قبل %.1f LUFS، بعد %s LUFS" % (ii, lufs))
+            af = "loudnorm=I=%s:TP=-1.5:LRA=11:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:linear=true" % (lufs, M["input_i"], M["input_tp"], M["input_lra"], M["input_thresh"])
+            subprocess.run(["ffmpeg", "-v", "error", "-nostats", "-i", mix, "-af", af, "-ar", "48000", "-y", nrm], check=True)
+        elif M is None: subprocess.run(["ffmpeg", "-v", "error", "-nostats", "-i", mix, "-af", "loudnorm=I=%s:TP=-1.5:LRA=11" % lufs, "-ar", "48000", "-y", nrm], check=True)
+        else: log("الصوت صامت، تخطّيت المعايرة"); shutil.copy(mix, nrm)
+        subprocess.run(["ffmpeg", "-v", "error", "-nostats", "-i", src, "-i", nrm, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", "-y", out], check=True)
+    finally:
+        for f in (mix, nrm):
+            try: os.remove(f)
+            except OSError: pass
+    return out
 def export(work, S, log, kind="final", hooks=False, frame=None):
     """kind: final | clean (بلا كابشن). hooks=True يطلّع نسخة لكل صيغة هوك."""
     ensure_media(work, S, log)   # 4.23: القص الفوري يتركّب هنا
@@ -3527,6 +3559,21 @@ def cmd_selftest(work=None, engine=None):
         me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); rf_ = open(os.path.join(find_engine(None) or "", "scripts", "04_render_frames.js"), encoding="utf-8").read()
         chk("4.34: فحص الأدوات يكتشف مكتبة التصدير، و«hs deps» يثبّتها بـ ~/.hojas-studio", callable(cmd_deps) and 'chk("مكتبة التصدير (puppeteer-core)"' in me_ and "hs deps" in rf_ and "hs deps" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
     except Exception as e: chk("4.34", False, str(e)[:240])
+    try:   # 4.35
+        td = tempfile.mkdtemp(prefix="hs-35-")
+        try:
+            v = os.path.join(td, "in.mp4"); subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2", "-shortest", "-c:v", "libx264", "-c:a", "aac", "-y", v], check=True)
+            o = master_audio(td, v, os.path.join(td, "out.mp4"), lambda *a: None); okm = os.path.isfile(o) and ffdur(o) > 1.5
+            r_ = os.path.join(td, "root"); w_ = os.path.join(r_, "clip-x"); os.makedirs(w_); wj(os.path.join(w_, "studio.json"), {}); wj(os.path.join(w_, "caps.json"), {"cards": []})
+            old_h = HOME_CFG
+            try: globals()["HOME_CFG"] = td; dst = project_trash(w_, r_)
+            finally: globals()["HOME_CFG"] = old_h
+            okt = os.path.isdir(dst) and not os.path.exists(w_) and os.path.basename(os.path.dirname(dst)) == ".trash"
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        chk("4.35: معايرة الصوت بدون bash، حذف المقطع لسلة، «ما عجبتني بدّلها»",
+            okm and okt and "try: master_audio(work, out_final, out_master" in me_ and "function swapNote" in ap_ and "data-trash" in hb_ and "isn't for this environment" in open(os.path.join(HERE, "GUIDE.html"), encoding="utf-8").read())
+    except Exception as e: chk("4.35", False, str(e)[:240])
     try:   # 4.26: حارس: ولا متغيّر داخل السيرفر يغطّي D (مجلد الكاش) أو P أو S، كان يخلّي الفريمات والصور المصغّرة ما تطلع
         me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
         bad_ = [l.strip()[:60] for l in me_.split(chr(10)) if re.match(r"^ {16,}(D|P|S|base|work) = ", l)]
@@ -6568,6 +6615,26 @@ def spawn_bg(args, logf):
     else: kw["start_new_session"] = True
     return subprocess.Popen([PY, os.path.abspath(__file__)] + args, **kw)
 def is_project(d): return os.path.isdir(d) and any(os.path.exists(os.path.join(d, f)) for f in ("caps.json", "studio.json", "src.mov", "cutz.mp4"))
+def project_trash(w, root=None):
+    """ينقل المشروع (أو الحلقة كاملة) لـ <مجلد المشاريع>/.trash/ بدل ما يمسحه، ويشيله من القائمة ومن مقاطع الحلقة."""
+    w = os.path.abspath(w); base = os.path.abspath(root) if root and os.path.isdir(root) else os.path.dirname(w)
+    if os.path.normcase(os.path.dirname(w)) != os.path.normcase(base) and os.path.isfile(os.path.join(os.path.dirname(w), "clips.json")):
+        base = os.path.dirname(os.path.dirname(w))   # مقطع داخل حلقة: سلة مجلد المشاريع نفسه
+    tr = os.path.join(base, ".trash"); os.makedirs(tr, exist_ok=True)
+    dst = os.path.join(tr, "%s-%s" % (os.path.basename(w), time.strftime("%Y%m%d-%H%M%S")))
+    ep = os.path.dirname(w) if os.path.isfile(os.path.join(os.path.dirname(w), "clips.json")) else None
+    shutil.move(w, dst)
+    try:
+        reg = [x for x in (rj(projects_reg_path(), []) or []) if not os.path.normcase(os.path.abspath(x)).startswith(os.path.normcase(w))]; wj(projects_reg_path(), reg)
+    except Exception: pass
+    if ep:
+        try:
+            cfg = clips_cfg(ep); nm = os.path.basename(w); cfg["clips"] = [c for c in cfg.get("clips") or [] if c.get("name") != nm]
+            for c in cfg.get("cands") or []:
+                if c.get("made") == nm: c.pop("made", None)
+            wj(os.path.join(ep, "clips.json"), cfg)
+        except Exception: pass
+    return dst
 def hub_projects(root):
     seen, out = set(), []
     def add(d):
@@ -7243,6 +7310,13 @@ def hub_serve(root, port):
                 try: d2 = proj_dup(w)
                 except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
                 return self._json(200, {"ok": True, "id": hashlib.md5(os.path.normcase(d2).encode()).hexdigest()[:10]})
+            if a == "trash":   # 4.35: حذف مقطع أو حلقة: ينتقل لمجلد .trash بمجلد المشاريع (يرجع لو غيّرت رأيك)
+                w = card_by(data.get("id", ""))
+                if not w: return self._json(404, {"ok": False, "msg": "ما لقيت المقطع"})
+                try: dst = project_trash(w, root)
+                except PermissionError: return self._json(409, {"ok": False, "msg": "المقطع مفتوح بالاستوديو أو برنامج ثاني: سكّره وجرّب"})
+                except Exception as e: return self._json(500, {"ok": False, "msg": "ما قدرت أحذفه: " + str(e)[:160]})
+                return self._json(200, {"ok": True, "to": dst})
             if a == "rename":
                 w = card_by(data.get("id", ""))
                 if not w: return self._json(404, {"ok": False})

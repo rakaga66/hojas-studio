@@ -81,7 +81,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.37"
+VERSION = "4.38"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -3629,7 +3629,8 @@ def cmd_selftest(work=None, engine=None):
                and "## 5) البرومبت الرئيسي" in mg and "## 6) الصفحة الفاضية" in mg and "## 7) فحص الموشن" in mg and os.path.isfile(os.path.join(HERE, "engine", "references", "identity.md")))
         ex37 = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); okm = okm and "if(rt<0.18&&an!=='none')" in ex37 and "if(V.lay==='bare'){ const cb0=L.bgColor" in ex37   # 4.37: الصفحة الفاضية (قطع نظيف، والكتابة بلونها)
         sk_ = open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
-        oku = ("## 2ب) Motion Graphics" in sk_ and "## 2ج) الهوية المحفوظة" in sk_ and "references/motion-graphics.md" in sk_ and "'normal','motion','podcast','paper','dahih'" in ap_ and "function idSecHtml" in ap_
+        dsc_ = re.search(r'^description: "(.*)"$', sk_, re.M)   # claude.ai يرفض السكل لو الوصف فوق 1024 حرف
+        oku = (bool(dsc_) and len(dsc_.group(1)) <= 1024 and "## 2ب) Motion Graphics" in sk_ and "## 2ج) الهوية المحفوظة" in sk_ and "references/motion-graphics.md" in sk_ and "'normal','motion','podcast','paper','dahih'" in ap_ and "function idSecHtml" in ap_
                and "/hs/identity_file" in ap_ and "data-nid" in hb_ and "['motion',IC.spark" in hb_ and 'stl == "motion"' in open(os.path.abspath(__file__), encoding="utf-8").read())
         chk("4.37: Motion Graphics أساسي (16 مجلد، %d تقنية، 10 قوالب كاملة) والهوية المحفوظة تنطبق على المونتاج والموشن والبودكاست" % len(cat), oki and okc and okm and oku, "هوية=%s فحص=%s مرجع=%s واجهة=%s" % (oki, okc, okm, oku))
     except Exception as e: chk("4.37", False, str(e)[:240])

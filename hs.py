@@ -80,7 +80,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.32"
+VERSION = "4.33"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -96,10 +96,20 @@ def rj(path, default=None):
     try:
         with open(path, encoding="utf-8") as f: return json.load(f)
     except Exception: return default
+_WJ_LOCK = threading.Lock()
 def wj(path, obj):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True); tmp = path + ".tmp"
+    """4.33: ملف مؤقت باسم خاص لكل كتابة، ولو ويندوز رفض الاستبدال (الملف مفتوح للقراءة، OneDrive، مضاد الفيروسات) نعيد المحاولة ثم نكتب مباشرة.
+    قبل: كتابتين بنفس اللحظة على job.json.tmp تطلع «Access is denied [WinError 5]» وتوقف الشغل."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True); tmp = "%s.%d.%d.tmp" % (path, os.getpid(), threading.get_ident())
     with open(tmp, "w", encoding="utf-8") as f: json.dump(obj, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+    for k in range(12):
+        try: os.replace(tmp, path); return
+        except PermissionError: time.sleep(0.05 * (k + 1))
+    try:
+        with open(path, "w", encoding="utf-8") as f: json.dump(obj, f, ensure_ascii=False, indent=1)
+    finally:
+        try: os.remove(tmp)
+        except OSError: pass
 def card_key(c): return " ".join(w["t"] for w in c["w"])
 def hs_of(st): return st.setdefault("hs", {})
 def J(work, *a): return os.path.join(work, *a)
@@ -3498,6 +3508,21 @@ def cmd_selftest(work=None, engine=None):
             T_ == [(0, 2), (3, 3)] and "X.__st?X.__st.call(X,1,0,0,1,0,0)" in ex_ and "function secTabs" in ap_ and "ELGROUPS" in ap_ and title_clean("&gt;&gt; سو") == "سو"
             and 'if edit in ("me", "claude"):' in open(os.path.abspath(__file__), encoding="utf-8").read())
     except Exception as e: chk("4.32", False, str(e)[:240])
+    try:   # 4.33: الحفظ ما يتعارض بويندوز
+        td = tempfile.mkdtemp(prefix="hs-wj-"); er_ = []
+        try:
+            def w_(i):
+                try:
+                    for k in range(40): job_set(td, stage="s%d" % i, k=k)
+                except Exception as e: er_.append(e)
+            def r_():
+                for k in range(120): job_get(td)
+            TT = [threading.Thread(target=w_, args=(i,)) for i in range(3)] + [threading.Thread(target=r_) for _ in range(2)]
+            [x.start() for x in TT]; [x.join() for x in TT]
+            left = [f for f in os.listdir(os.path.join(td, ".hs")) if f.endswith(".tmp")]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        chk("4.33: حفظ الملفات ما يطلع «Access is denied» لو كتابتين وقراءات بنفس اللحظة", not er_ and not left)
+    except Exception as e: chk("4.33", False, str(e)[:240])
     try:   # 4.26: حارس: ولا متغيّر داخل السيرفر يغطّي D (مجلد الكاش) أو P أو S، كان يخلّي الفريمات والصور المصغّرة ما تطلع
         me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
         bad_ = [l.strip()[:60] for l in me_.split(chr(10)) if re.match(r"^ {16,}(D|P|S|base|work) = ", l)]
@@ -6017,7 +6042,9 @@ LONG_SEC = 360
 def job_path(d): return J(d, ".hs", "job.json")
 def job_get(d): return rj(job_path(d), {}) or {}
 def job_set(d, **kw):
-    os.makedirs(J(d, ".hs"), exist_ok=True); j = job_get(d); j.update(kw); j["at"] = int(time.time()); wj(job_path(d), j); return j
+    os.makedirs(J(d, ".hs"), exist_ok=True)
+    with _WJ_LOCK: j = job_get(d); j.update(kw); j["at"] = int(time.time()); wj(job_path(d), j)   # 4.33: قراءة وكتابة وحدة بوقتها
+    return j
 def ytdlp_cmd():
     try:
         if importlib.util.find_spec("yt_dlp"): return [PY, "-m", "yt_dlp"]
@@ -6799,6 +6826,10 @@ def plugin_skill_text():
 def cmd_release(args):
     """hs release: يجهّز البلقن قبل الرفع (نسخة SKILL.md للبلقن + رقم النسخة من VERSION)."""
     sk = os.path.join(HERE, "skills", "hojas-studio", "SKILL.md"); os.makedirs(os.path.dirname(sk), exist_ok=True)
+    try:   # 4.33: عنوان السكل ياخذ رقم النسخة لحاله
+        rp = os.path.join(HERE, "SKILL.md"); tx = open(rp, encoding="utf-8").read(); tx2 = re.sub(r"(?m)^# Hojas Studio [0-9.]+:", "# Hojas Studio %s:" % VERSION, tx, count=1)
+        if tx2 != tx: open(rp, "w", encoding="utf-8", newline="").write(tx2)
+    except Exception: pass
     open(sk, "w", encoding="utf-8").write(plugin_skill_text())
     pj = os.path.join(HERE, ".claude-plugin", "plugin.json"); d = rj(pj, {}) or {}; d["version"] = VERSION; wj(pj, d)
     print("البلقن جاهز: %s · النسخة %s" % (sk, VERSION))

@@ -430,7 +430,7 @@ def make(W):
     # 5) التجميع + المعايرة + الترجمة + الورقة
     dur=caps["total"]+P["outro"]
     sh(["ffmpeg","-v","error","-y","-framerate","30","-i",os.path.join(W,"out","%05d.jpg"),"-i",os.path.join(W,"master.m4a"),"-map","0:v","-map","1:a",
-        "-af","apad","-t",f"{dur:.3f}","-c:v","libx264","-preset","medium","-crf","19","-pix_fmt","yuv420p","-colorspace","bt709","-color_primaries","bt709","-color_trc","bt709",
+        "-af","apad","-t",f"{dur:.3f}","-vf","format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv","-c:v","libx264","-preset","medium","-crf","19","-pix_fmt","yuv420p","-colorspace","bt709","-color_primaries","bt709","-color_trc","bt709",
         "-c:a","aac","-b:a","192k","-movflags","+faststart",os.path.join(W,"pod-final.mp4")],quiet=False)
     m=subprocess.run(["bash",os.path.join(SC,"06b_master.sh"),W,os.path.join(W,"pod-final.mp4"),os.path.join(W,"pod-master.mp4")],capture_output=True,text=True)
     lufs=[l for l in m.stdout.splitlines() if "LUFS" in l]

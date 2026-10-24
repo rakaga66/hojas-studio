@@ -148,6 +148,7 @@ python3 scripts/10_script_edit.py <work> undo
 python3 scripts/03_cut_zoom.py <work>
 mkdir -p <work>/vfr && ffmpeg -v error -i <work>/cutz.mp4 -vf fps=30 -q:v 3 -y <work>/vfr/%05d.jpg
 ```
+**6.0) فيديو الآيفون HDR على ويندوز:** بعد الفريمات شغّل `hs hdr <work> auto`. لو الأصل HDR وما انحوّل بمحوّل أبل تطلع الفريمات باهتة، وهذا يصلّحها (العادي ما يتغيّر شي).
 **6.1) مكان الوجه بالكروت:** ينحسب لحاله من `face.json` (أول ما يجهز الفيديو). لو وجهه طلع مقصوص داخل كرت: `hs face <work>` ثم عاين بلقطة يقرّب فيها من الكاميرا. `theme.json ← cardZoom` (افتراضي 1) للتقريب لو تحت جسمه نص محروق.
 
 ### 7) صمّم المشاهد ← أهم خطوة

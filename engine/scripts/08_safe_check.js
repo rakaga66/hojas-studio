@@ -33,7 +33,7 @@ const SAFE=fs.existsSync(W+'safe.json')?{...DEF,...JSON.parse(fs.readFileSync(W+
 
 function resolvePuppeteer(){
   for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',
-      path.join(process.cwd(),'node_modules/puppeteer-core')]) {
+      path.join(process.cwd(),'node_modules/puppeteer-core'),path.join(require('os').homedir(),'.hojas-studio','node_modules','puppeteer-core')]) {
     if(!p) continue; try{ return require(p); }catch(e){}
   }
   throw new Error('ما لقيت puppeteer-core — ثبّته: npm i puppeteer-core');

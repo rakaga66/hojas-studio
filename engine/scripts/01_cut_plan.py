@@ -88,6 +88,7 @@ except Exception as e:   # بلا numpy: الطريقة القديمة بعتب�
         cur = b
     if dur - cur > 0.01: speech.append((cur, dur))
     how = "عتبة ثابتة -32 dB (" + str(e)[:40] + ")"
+    FLOOR = -60.0
 
 # 4.9: آخر الكلمة الهادية ما ينقص. قبل: آخر مقطع بالجملة لو انقال بصوت واطي كان تحت العتبة وينقص،
 # فكل مقطع كلام يمتد قدام لين 0.25 ث وورا 0.12 ث ما دام فيه صوت فوق أرضية ضجيج المكان بـ 6 dB.
@@ -106,6 +107,26 @@ if DB is not None and speech:
         if merged and a <= merged[-1][1] + 0.02: merged[-1] = (merged[-1][0], max(merged[-1][1], b))
         else: merged.append((a, b))
     speech = merged
+
+# 4.43: الكلام الواطي ما ينقص (القص ما يشيل معنى): لو التفريغ (a.json) موجود، كل كلمة فيه ينحسب صوتها كلام بعتبة أوطى
+# (فوق ضجيج المكان بـ 4 dB) بس داخل حدود الكلمة نفسها، لأن whisper أحياناً يمد الكلمة على سكتة. كلمة ما فيها صوت أبد = هلوسة، ما تنحسب.
+_A = _rj("a.json"); _add = []
+for _sg in _A.get("segments") or []:
+    for _wd in _sg.get("words") or []:
+        try: _a, _b = float(_wd.get("start") or 0), float(_wd.get("end") or 0)
+        except (TypeError, ValueError): continue
+        if _b <= _a or not (_wd.get("word") or "").strip(): continue
+        if DB is None: _add.append((_a, min(_b, _a + 1.2))); continue
+        _ia, _ib = max(0, int(_a * 100)), min(len(DB), int(_b * 100) + 1)
+        _on = [k for k in range(_ia, _ib) if DB[k] > FLOOR + 4.0]
+        if _on: _add.append((_on[0] / 100.0, (_on[-1] + 1) / 100.0))
+if _add:
+    _was = sum(b - a for a, b in speech); merged = []
+    for a, b in sorted(list(speech) + _add):
+        if merged and a <= merged[-1][1] + 0.02: merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else: merged.append((a, b))
+    speech = merged; _gain = sum(b - a for a, b in speech) - _was
+    if _gain > 0.05: print("رجّعت %.1f ث كلام واطي كان بينقص (من التفريغ)" % _gain)
 
 # نبني المقاطع: أي سكتة أطول من GAP تنقص لـ GAP بالضبط (نص قبلها ونص بعدها، والميل للي بعدها)
 keep = []

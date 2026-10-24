@@ -9,7 +9,8 @@
 button,input,textarea{font-family:inherit}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font-family:"HS UI",system-ui,"Segoe UI",Tahoma,sans-serif;font-size:14.5px}
 .in{max-width:940px;margin:0 auto;padding:16px;display:grid;grid-template-columns:minmax(0,360px) 1fr;gap:20px}
-h1{font-size:18px;margin:0 0 4px}.hint{color:var(--mut);font-size:12.5px;line-height:1.7}
+h1{font-size:18px;margin:0 0 4px;flex:1}.hint{color:var(--mut);font-size:12.5px;line-height:1.7}
+.hd{display:flex;align-items:center;gap:8px}.hd button{padding:5px 11px;font-size:12.5px}
 #box{position:relative;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden}
 video{width:100%;height:100%;display:block}canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:none;cursor:crosshair}
 canvas.on{display:block}
@@ -25,14 +26,14 @@ input,textarea{font:inherit;color:inherit;background:var(--s1);border:1px solid 
 <body><div class="in">
   <div>
     <div id="box"><video id="v" playsinline controls></video><canvas id="cv" width="540" height="960"></canvas></div>
-    <p class="hint" id="noVid" style="display:none">لسه ما فيه نسخة مصدّرة للمراجعة.</p>
+    <p class="hint" id="noVid" style="display:none" data-r="noVid">لسه ما فيه نسخة مصدّرة للمراجعة.</p>
   </div>
   <div>
-    <h1 id="ttl">مراجعة المقطع</h1><p class="hint">وقّف المقطع عند أي لحظة واكتب ملاحظتك. تقدر ترسم على الصورة تحدد المكان.</p>
+    <div class="hd"><h1 id="ttl" data-r="title">مراجعة المقطع</h1><button id="bLang" type="button">English</button></div><p class="hint" data-r="lead">وقّف المقطع عند أي لحظة واكتب ملاحظتك. تقدر ترسم على الصورة تحدد المكان.</p>
     <div id="appr"></div>
-    <div class="row"><input id="who" placeholder="اسمك" style="max-width:180px"><button id="bDraw">ارسم على الصورة</button><button id="bClr" style="display:none">امسح الرسم</button></div>
-    <textarea id="tx" rows="3" placeholder="ملاحظتك عند هذه اللحظة"></textarea>
-    <div class="row"><button class="pri" id="bSend">أرسل الملاحظة</button><span class="hint" id="at"></span><span style="flex:1"></span><button class="ok" id="bOk">اعتماد المقطع</button></div>
+    <div class="row"><input id="who" placeholder="اسمك" data-r-ph="who" style="max-width:180px"><button id="bDraw" data-r="draw">ارسم على الصورة</button><button id="bClr" style="display:none" data-r="clear">امسح الرسم</button></div>
+    <textarea id="tx" rows="3" placeholder="ملاحظتك عند هذه اللحظة" data-r-ph="note" dir="auto"></textarea>
+    <div class="row"><button class="pri" id="bSend" data-r="send">أرسل الملاحظة</button><span class="hint" id="at"></span><span style="flex:1"></span><button class="ok" id="bOk">اعتماد المقطع</button></div>
     <div id="list" style="margin-top:14px"></div>
   </div>
 </div>
@@ -40,16 +41,25 @@ input,textarea{font:inherit;color:inherit;background:var(--s1);border:1px solid 
 const $=s=>document.querySelector(s), V=$('#v'), C=$('#cv'), X=C.getContext('2d');
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=t=>{const m=Math.floor(t/60),s=(t%60).toFixed(1).padStart(4,'0');return m+':'+s;};
+/* 4.40: عربي وإنجليزي. العميل على جهازه: لغته المحفوظة، وإلا لغة متصفحه */
+let LANG='ar'; try{ LANG=localStorage.getItem('hsLang')||((navigator.language||'ar').toLowerCase().startsWith('ar')?'ar':'en'); }catch(e){}
+const TX={title:['مراجعة المقطع','Video review'],noVid:['لسه ما فيه نسخة مصدّرة للمراجعة.','No exported version to review yet.'],lead:['وقّف المقطع عند أي لحظة واكتب ملاحظتك. تقدر ترسم على الصورة تحدد المكان.','Pause the video at any moment and write your note. You can draw on the frame to point at the spot.'],
+ who:['اسمك','Your name'],draw:['ارسم على الصورة','Draw on the frame'],clear:['امسح الرسم','Clear drawing'],note:['ملاحظتك عند هذه اللحظة','Your note at this moment'],send:['أرسل الملاحظة','Send note'],
+ approve:['اعتماد المقطع','Approve video'],unapprove:['سحب الاعتماد','Withdraw approval'],approvedBy:['معتمد من','Approved by'],reviewOf:['مراجعة: ','Review: '],none:['ما فيه ملاحظات بعد.','No notes yet.'],at:['عند ','At '],client:['عميل','Client'],lang:['English','عربي']};
+const t=k=>{ const v=TX[k]; return v?v[LANG==='en'?1:0]:k; };
+function applyLang(){ document.documentElement.lang=LANG; document.documentElement.dir=LANG==='en'?'ltr':'rtl'; document.title=t('title');
+  document.querySelectorAll('[data-r]').forEach(e=>e.textContent=t(e.dataset.r)); document.querySelectorAll('[data-r-ph]').forEach(e=>e.placeholder=t(e.dataset.rPh)); $('#bLang').textContent=t('lang'); }
 let S=null, strokes=[], cur=null, drawing=false;
 try{ $('#who').value=localStorage.getItem('hsWho')||''; }catch(e){}
 async function api(u,b){ const r=await fetch(u,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}); return r.json(); }
 function paint(list){ X.clearRect(0,0,540,960); X.strokeStyle='#e5484d'; X.lineWidth=5; X.lineCap='round'; X.lineJoin='round'; for(const s of list){ if(s.length<2) continue; X.beginPath(); X.moveTo(s[0][0]*540,s[0][1]*960); for(const p of s) X.lineTo(p[0]*540,p[1]*960); X.stroke(); } }
-function render(){ $('#ttl').textContent='مراجعة: '+S.name; if(S.video){ if(V.dataset.u!==S.video){ V.dataset.u=S.video; V.src=S.video; } } else { $('#box').style.display='none'; $('#noVid').style.display='block'; }
-  $('#appr').innerHTML=S.approved?'<p><span class="badge">معتمد من '+esc(S.approved.by)+' · '+esc(S.approved.at)+'</span></p>':'';
-  $('#bOk').textContent=S.approved?'سحب الاعتماد':'اعتماد المقطع';
-  $('#list').innerHTML=S.comments.slice().sort((a,b)=>a.t-b.t).map(c=>'<div class="c" data-id="'+c.id+'"><b>'+fmt(c.t)+'</b> · '+esc(c.who)+'<p>'+esc(c.text)+'</p></div>').join('')||'<p class="hint">ما فيه ملاحظات بعد.</p>'; }
+function render(){ if(!S) return; $('#ttl').textContent=t('reviewOf')+S.name; if(S.video){ if(V.dataset.u!==S.video){ V.dataset.u=S.video; V.src=S.video; } } else { $('#box').style.display='none'; $('#noVid').style.display='block'; }
+  $('#appr').innerHTML=S.approved?'<p><span class="badge">'+t('approvedBy')+' '+esc(S.approved.by)+' · '+esc(S.approved.at)+'</span></p>':'';
+  $('#bOk').textContent=t(S.approved?'unapprove':'approve');
+  $('#list').innerHTML=S.comments.slice().sort((a,b)=>a.t-b.t).map(c=>'<div class="c" data-id="'+c.id+'"><b>'+fmt(c.t)+'</b> · '+esc(c.who)+'<p dir="auto">'+esc(c.text)+'</p></div>').join('')||'<p class="hint">'+t('none')+'</p>'; }
 async function load(){ S=await api('/hs/review_state'); render(); }
-V.ontimeupdate=()=>{ $('#at').textContent='عند '+fmt(V.currentTime); };
+V.ontimeupdate=()=>{ $('#at').textContent=t('at')+fmt(V.currentTime); };
+$('#bLang').onclick=()=>{ LANG=LANG==='en'?'ar':'en'; try{ localStorage.setItem('hsLang',LANG); }catch(e){} applyLang(); render(); };
 $('#bDraw').onclick=()=>{ V.pause(); V.controls=false; C.classList.add('on'); $('#bClr').style.display='inline-block'; paint(strokes); };
 $('#bClr').onclick=()=>{ strokes=[]; paint(strokes); };
 const pt=e=>{ const r=C.getBoundingClientRect(); return [+((e.clientX-r.left)/r.width).toFixed(3),+((e.clientY-r.top)/r.height).toFixed(3)]; };
@@ -57,10 +67,10 @@ C.addEventListener('pointerdown',e=>{ drawing=true; cur=[pt(e)]; strokes.push(cu
 C.addEventListener('pointermove',e=>{ if(!drawing) return; if(cur.length<200) cur.push(pt(e)); paint(strokes); });
 C.addEventListener('pointerup',()=>drawing=false);
 function endDraw(){ C.classList.remove('on'); V.controls=true; $('#bClr').style.display='none'; strokes=[]; X.clearRect(0,0,540,960); }
-$('#bSend').onclick=async()=>{ const text=$('#tx').value.trim(); if(!text){ $('#tx').focus(); return; } const who=$('#who').value.trim()||'عميل'; try{ localStorage.setItem('hsWho',who); }catch(e){}
+$('#bSend').onclick=async()=>{ const text=$('#tx').value.trim(); if(!text){ $('#tx').focus(); return; } const who=$('#who').value.trim()||t('client'); try{ localStorage.setItem('hsWho',who); }catch(e){}
   const r=await api('/hs/review_comment',{t:V.currentTime||0,text,who,draw:strokes}); if(r.ok){ S={...S,...r}; $('#tx').value=''; endDraw(); render(); } };
-$('#bOk').onclick=async()=>{ const who=$('#who').value.trim()||'عميل'; const r=await api('/hs/review_approve',{who,ok:!S.approved}); if(r.ok){ S={...S,...r}; render(); } };
+$('#bOk').onclick=async()=>{ const who=$('#who').value.trim()||t('client'); const r=await api('/hs/review_approve',{who,ok:!S.approved}); if(r.ok){ S={...S,...r}; render(); } };
 $('#list').addEventListener('click',e=>{ const el=e.target.closest('.c'); if(!el) return; const c=S.comments.find(x=>String(x.id)===el.dataset.id); if(!c) return; V.pause(); V.currentTime=c.t; if(c.draw&&c.draw.length){ C.classList.add('on'); C.style.pointerEvents='none'; paint(c.draw); setTimeout(()=>{ C.classList.remove('on'); C.style.pointerEvents=''; X.clearRect(0,0,540,960); },2600); } });
-load();
+applyLang(); load();
 </script>
 </body></html>

@@ -8,7 +8,7 @@ const W=path.resolve(process.argv[2])+path.sep, SC=__dirname+path.sep;
 const args=process.argv.slice(3);const li=args.indexOf('--logos');const LOGOS=li>=0?path.resolve(args[li+1])+path.sep:null;if(li>=0)args.splice(li,2);
 const STYLE=(args[0]==='accents')?'accents':'collage';const MODE=args[1]||'all';
 const CHROME=process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-function resolvePuppeteer(){for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core')]){if(!p)continue;try{return require(p);}catch(e){}}throw new Error('ما لقيت puppeteer-core — ثبّته: npm i puppeteer-core');}
+function resolvePuppeteer(){for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core'),path.join(require('os').homedir(),'.hojas-studio','node_modules','puppeteer-core')]){if(!p)continue;try{return require(p);}catch(e){}}throw new Error('ما لقيت puppeteer-core — ثبّته: npm i puppeteer-core');}
 const sh=(c,opt={})=>cp.execSync(c,{stdio:['ignore','pipe','pipe'],...opt}).toString();
 for(const f of ['cutz.mp4','caps.json','theme.json'])if(!fs.existsSync(W+f)){console.error('ناقص: '+W+f+' — شغّل الخطوات 3-6 أول');process.exit(2);}
 const CAPS=JSON.parse(fs.readFileSync(W+'caps.json','utf8'));const DUR=CAPS.total||CAPS.cards[CAPS.cards.length-1].e;const FPS=30;let N=Math.ceil(DUR*FPS);

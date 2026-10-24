@@ -15,7 +15,7 @@ if(theme.fontFiles) theme.fontFiles=theme.fontFiles.map(f=>({...f,src:url(path.r
 if(theme.logo) theme.logo=url(path.resolve(W,theme.logo));
 function findChrome(){ if(process.env.CHROME_PATH) return process.env.CHROME_PATH;
   for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/google-chrome','/usr/bin/chromium']) if(fs.existsSync(c)) return c; throw new Error('ما لقيت كروم — حدّد CHROME_PATH'); }
-function pupp(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core'),SC+'../node_modules/puppeteer-core']){ if(!p) continue; try{return require(p);}catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
+function pupp(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core'),SC+'../node_modules/puppeteer-core',path.join(require('os').homedir(),'.hojas-studio','node_modules','puppeteer-core')]){ if(!p) continue; try{return require(p);}catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
 (async()=>{
   const puppeteer=pupp(); const mode=process.argv[3]||'all';
   const b=await puppeteer.launch({executablePath:findChrome(),headless:'new',args:['--no-sandbox','--allow-file-access-from-files','--font-render-hinting=none','--force-color-profile=srgb']});

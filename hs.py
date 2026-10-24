@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Hojas Studio 4.36 — استوديو مونتاج بمحرّكه (مجلد engine بجنب هذا الملف، بدون أي مكتبة خارجية).
+"""Hojas Studio 4.48 — استوديو مونتاج بمحرّكه (مجلد engine بجنب هذا الملف، بدون أي مكتبة خارجية).
 
   python hs.py open   <work> [--engine <مجلد المحرّك>] [--port 8800] [--no-browser]
         يشغّل الخادم بالخلفية ويفتح المتصفح. شغّله أول ما تبدأ المونتاج، حتى قبل ما يجهز أي ملف.
@@ -20,6 +20,8 @@
   python hs.py sound  providers [set elevenlabs higgsfield | off]   خدمات الأصوات المربوطة بحسابه (يسألك عنها بصفحة الأسئلة)
   python hs.py dub    <work> script <ar|en|es…> | import <json> | add <رقم> <ملف> | track <ملف> | build | off | status   الدبلجة بسكتات المقطع
   python hs.py quality <work> off | light | strong | preview <ث>   تحسين الجودة: ينظّف ويحدّد ويرفع لـ1080 (قبل الكابشن)
+  python hs.py stab <work> check | auto | off | light | strong | preview <ث>   تثبيت الصورة: يفحص الاهتزاز ويثبّت التصوير باليد (قبل الكابشن)
+  python hs.py hdr  <work> status | auto | on | off | preview <ث>   ألوان الآيفون: فيديو HDR يطلع باهت على ويندوز، يتصلّح على جهازك (قبل الكابشن)
   python hs.py media  <work> [fresh]                            القص الفوري: هل الفيديو على آخر قص؟ و fresh يبنيه الحين
   python hs.py mode   <work> [claude | manual]                    وضع الاستوديو: Claude يمنتج، أو مونتاج يدوي (و«اسأل Claude» لو احتجته)
   python hs.py beat   <work> [ملف | my2] [--at ث]                 يقيس إيقاع الموسيقى (للقص على الضربة)
@@ -29,6 +31,8 @@
   python hs.py set    <work> cap.font=Tajawal cap.size=70 en.on=true mix.voice=1.2 …
   python hs.py layer  <work> list | add type=text text="…" s=1 e=4 … | set <id> k=v … | rm <id>
   python hs.py kf     <work> <id> list | add <ث> [dx= dy= s= r= o= e=smooth|linear|back|hold] | rm <ث|all> | preset across|grow|rise|spin|pulse|sway   حركة بالمفاتيح
+  python hs.py key    <work> list | <رقم|all> [off] [color=auto|green|blue|#RRGGBB] [sim= soft= spill=] [size= x= y=] | detect <لقطة>   شيل الشاشة الخضراء (4.39)
+  python hs.py emoji  <work> list | on | off | set <رقم الجملة> <إيموجي|none|auto> | clear | pos word|center | anim pop|bounce|float | size | gap | only all|hot   إيموجي الكابشن (4.48)
   python hs.py hook   <work> set "صيغة 1" "صيغة 2" … | active <رقم> | off
   python hs.py check  <work>                         فحص الاحتفاظ + الحشو + الجمل المعادة
   python hs.py remove <work> [--cards 3 7] [--ranges 4.2-5.1 …] [--fillers] [--force]    يقص من الفيديو والصوت (يرفض الكلام المهم وآخر المقطع بدون --force)
@@ -81,7 +85,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.38"
+VERSION = "4.49"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -229,6 +233,13 @@ def patch(work, quiet=False):
 
 # ───────────────────────── البث الحي: نشاط + مراحل ─────────────────────────
 def act_path(work): return J(work, ".hs", "activity.jsonl")
+UI_LANG = ["ar"]   # 4.40: لغة الواجهة اللي أرسلت آخر طلب (كوكي hs_lang)
+def lang_from(h):
+    try: UI_LANG[0] = "en" if "hs_lang=en" in (h.headers.get("Cookie") or "") else "ar"
+    except Exception: pass
+def lang_hint(task):
+    """لو واجهته إنجليزي، Claude يكتب له بالإنجليزي (الملاحظات والأسئلة والردود)."""
+    return task + "\n\n(The person's studio is in English: write every note, question and reply to them in English.)" if UI_LANG[0] == "en" else task
 def say(work, text, kind="info"):
     os.makedirs(J(work, ".hs"), exist_ok=True); p = act_path(work)
     n = sum(1 for _ in open(p, encoding="utf-8")) if os.path.exists(p) else 0
@@ -411,8 +422,12 @@ def check(work):
     except Exception: tips = []
     try: xs = {"unsure": sum(1 for c in cards for w in c["w"] if w.get("lo")), "speechGaps": caps_gaps(work)[:12], "cutSound": len(cut_on_sound(work)[0]), "facts": facts(work)[:12]}   # 4.10
     except Exception: xs = {"unsure": 0, "speechGaps": [], "cutSound": 0, "facts": []}
-    return {"gap": gap, "words": maxw, "fillers": fillers, "dupes": dupes, "gaps": gaps, "longCaps": long_caps, "firstCap": first, "issues": issues, "score": score, "total": total, "tips": tips,
-            "open": open_check(first, ev, hs, total), "len": len_check(total, hs.get("platforms")), **xs}
+    try: si_ = stab_info(work); shake = {"jitter": si_["jitter"], "level": si_["level"], "on": stab_level(work)} if si_ else {"level": None, "on": stab_level(work), "can": stab_has()}   # 4.40
+    except Exception: shake = None
+    try: hi_ = hdr_info(work); hdr = {"kind": hi_["kind"], "washed": hi_["washed"], "level": hi_["level"]} if hi_["kind"] or hi_["level"] == "on" else None   # 4.41: ألوان HDR باهتة
+    except Exception: hdr = None
+    return {"gap": gap, "words": maxw, "fillers": fillers, "dupes": dupes, "gaps": gaps, "longCaps": long_caps, "firstCap": first, "issues": issues + (1 if hdr and hdr.get("washed") else 0), "score": score, "total": total, "tips": tips,
+            "open": open_check(first, ev, hs, total), "len": len_check(total, hs.get("platforms")), "shake": shake, "hdr": hdr, **xs}
 
 # ───────────────────────── قص مقاطع من الفيديو (حشو · إعادات · بليد) ─────────────────────────
 def snapshot(work, name):
@@ -683,16 +698,214 @@ def enh_filter(level, src_w=0, src_h=0):
     if level == "strong": f.append("unsharp=7:7:0.35:7:7:0")
     f.append("eq=saturation=%.2f:contrast=%.2f" % ((1.05, 1.03) if level == "light" else (1.08, 1.05)))
     return ",".join(f)
+# ── 4.43: الألوان من نافذة المقطع الجديد: تصوير مسطح (Log) أو ملف LUT من المستخدم، وطابع ألوان فوقها ──
+# الـLUT والتحويل من Log ينطبعون على فريمات المقطع نفسها (vfr) فيطلعون بالمعاينة والتصدير؛ والطابع (hs.grade) يبقى يتعدّل من الاستوديو.
+LUT_DIR = os.path.join(HOME_CFG, "luts")
+COLOR_PRESETS = ("none", "natural", "studio", "skin", "warm", "cool", "cine", "film", "pop", "muted", "teal", "night", "bw")
+LOG_VF = "curves=all='0/0 0.1/0.01 0.3/0.2 0.5/0.48 0.7/0.78 0.9/0.97 1/1',eq=saturation=1.45"   # تحويل عام من Log لألوان عادية (تقريبي، لأي كاميرا)
+def lut_safe(name): return re.sub(r"[^\w\-. ]+", "", os.path.splitext(os.path.basename(str(name or "")))[0]).strip(" .")[:48]
+def lut_check(txt):
+    """يتأكد إن الملف LUT ثلاثي الأبعاد (.cube) سليم: الحجم مكتوب وعدد السطور مضبوط."""
+    n = 0; rows = 0
+    for ln in txt.splitlines():
+        ln = ln.strip()
+        if not ln or ln[0] == "#": continue
+        if ln.upper().startswith("LUT_3D_SIZE"):
+            try: n = int(ln.split()[1])
+            except (IndexError, ValueError): return 0
+        elif ln[0] in "-.0123456789" and len(ln.split()) == 3: rows += 1
+    return n if 2 <= n <= 65 and rows == n ** 3 else 0
+def lut_save(name, data):
+    if len(data) > 40 << 20: raise ValueError("ملف الـLUT كبير زيادة")
+    try: txt = data.decode("utf-8-sig")
+    except UnicodeDecodeError: raise ValueError("هذا مو ملف LUT (.cube)")
+    if not lut_check(txt): raise ValueError("ملف الـLUT ناقص أو مو ثلاثي الأبعاد (لازم .cube فيه LUT_3D_SIZE)")
+    nm = lut_safe(name) or time.strftime("lut-%m%d-%H%M"); os.makedirs(LUT_DIR, exist_ok=True)
+    tmp = os.path.join(LUT_DIR, nm + ".cube.tmp"); open(tmp, "w", encoding="utf-8", newline="\n").write(txt); os.replace(tmp, os.path.join(LUT_DIR, nm + ".cube"))
+    return nm
+def lut_list():
+    try: return sorted(os.path.splitext(f)[0] for f in os.listdir(LUT_DIR) if f.lower().endswith(".cube"))
+    except OSError: return []
+def color_cfg(work): return rj(J(work, ".hs", "color.json"), {}) or {}
+def color_set(work, preset=None, log=None, lut=None):
+    """يحفظ اختيار الألوان للمشروع وينسخ الـLUT لمجلده (فيضل يشتغل لو انحذف من المكتبة)."""
+    c = color_cfg(work)
+    if preset is not None: c["preset"] = preset if preset in COLOR_PRESETS else "none"
+    if log is not None: c["log"] = bool(log)
+    if lut is not None:
+        nm = lut_safe(lut); src = os.path.join(LUT_DIR, nm + ".cube")
+        if nm and os.path.isfile(src): os.makedirs(J(work, ".hs"), exist_ok=True); shutil.copy2(src, J(work, ".hs", "user.cube")); c["lut"] = nm
+        else:
+            c.pop("lut", None)
+            try: os.remove(J(work, ".hs", "user.cube"))
+            except FileNotFoundError: pass
+    os.makedirs(J(work, ".hs"), exist_ok=True); wj(J(work, ".hs", "color.json"), c); return c
+def color_filter(work):
+    """فلتر الألوان للفريمات (بعد تصليح HDR): الـLUT لو فيه (يشمل تحويل Log عادة)، وإلا تحويل Log العام، وإلا ولا شي. لازم cwd=work."""
+    c = color_cfg(work)
+    if c.get("lut") and os.path.isfile(J(work, ".hs", "user.cube")): return "lut3d=file=.hs/user.cube:interp=tetrahedral"
+    return LOG_VF if c.get("log") else ""
+def color_grade_apply(work):
+    """طابع الألوان المختار بالنافذة ينحفظ بالاستوديو (hs.grade) مرة وحدة، وبعدها الاستوديو هو اللي يتحكم فيه."""
+    c = color_cfg(work)
+    if c.get("graded") or not c.get("preset"): return
+    st = load_studio(work); H = hs_of(st)
+    if c["preset"] == "none": H.pop("grade", None)
+    else: H["grade"] = {"preset": c["preset"], "amount": 0.85}
+    wj(J(work, "studio.json"), st); c["graded"] = True; wj(J(work, ".hs", "color.json"), c)
+# ── 4.44: أدوات الصورة الاحترافية: تلوين دقيق لكل لون (Color Warper)، تنعيم البشرة (Face Refinement)، وإزالة عنصر ثابت (Object Removal) ──
+# تنطبع على فريمات المقطع (بعد الألوان وقبل التثبيت) فتطلع بالمعاينة والتصدير. hs.fix = {warp:{r:{h,s,l},…}, skin:off|light|strong, erase:[{x,y,w,h}]}
+FIX_COLORS = ("r", "y", "g", "c", "b", "m")
+FIX_SKIN = {"light": "bilateral=sigmaS=6:sigmaR=0.06", "strong": "bilateral=sigmaS=10:sigmaR=0.1"}
+def fix_cfg(work): return hs_of(load_studio(work)).get("fix") or {}
+def fix_filter(work, F=None, w=0, h=0):
+    F = F if F is not None else fix_cfg(work); ch = []
+    if not w or not h: w, h = vid_size(J(work, "cutz.mp4"))
+    w, h = w or 1080, h or 1920
+    for r in (F.get("erase") or [])[:8]:   # delogo لازم يكون داخل الصورة بالكامل
+        try: x, y, rw, rh = (float(r[k]) for k in ("x", "y", "w", "h"))
+        except (KeyError, TypeError, ValueError): continue
+        px, py = max(1, int(x * w)), max(1, int(y * h)); pw, ph = min(w - px - 2, int(rw * w)), min(h - py - 2, int(rh * h))
+        if pw >= 4 and ph >= 4: ch.append("delogo=x=%d:y=%d:w=%d:h=%d" % (px, py, pw, ph))
+    for c, v in (F.get("warp") or {}).items():
+        if c not in FIX_COLORS or not isinstance(v, dict): continue
+        hu, sa, li = float(v.get("h") or 0), float(v.get("s") or 0), float(v.get("l") or 0)
+        if abs(hu) < 0.5 and abs(sa) < 0.01 and abs(li) < 0.01: continue
+        ch.append("huesaturation=hue=%.1f:saturation=%.3f:intensity=%.3f:colors=%s:strength=2" % (max(-180, min(180, hu)), max(-1, min(1, sa)), max(-1, min(1, li)), c))
+    if F.get("skin") in FIX_SKIN: ch.append(FIX_SKIN[F["skin"]])
+    return ",".join(ch)
+def fix_preview(work, t, F=None):
+    ok, vm = media_map(work); o = max(0.0, float(t))
+    if vm:
+        for s0, e0, m0 in vm:
+            if o < e0: o = m0 + max(0.0, o - s0); break
+    ch = fix_filter(work, F) or "null"; os.makedirs(J(work, ".hs"), exist_ok=True)
+    vf = "[0:v]split[a][b];[b]%s,scale=480:-2[s];[a]scale=480:-2[o];[o][s]hstack" % ch
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % o, "-i", "cutz.mp4", "-frames:v", "1", "-filter_complex", vf, "-q:v", "2", J(".hs", "fprev.jpg")], check=True, timeout=90, cwd=work)
+    return J(work, ".hs", "fprev.jpg")
+# ── 4.45: حركة بطيئة لجزء (Speed Warp): فريمات بينية حقيقية (minterpolate) لمقطع يغطي الجزء كلقطة بي-رول، بدون ما يتغيّر طول المقطع ──
+# الجزء [s,e] يعرض بداية الحركة أبطأ بـ r (0.5 = نص السرعة)، وصوتك ينكتم فيه لو mute (عشان ما يطلع الفم مو على الكلام). يناسب الحركة ورد الفعل.
+def slowmo_make(work, s, e, r=0.5, mute=True, log=print):
+    s, e, r = float(s), float(e), float(r)
+    if not (0.15 <= r <= 0.9): raise ValueError("السرعة لازم بين 0.15 و0.9")
+    if e - s < 0.4 or e - s > 6.0: raise ValueError("الجزء لازم بين نص ثانية و6 ثواني")
+    ok, vm = media_map(work); o = s
+    if vm:
+        for s0, e0, m0 in vm:
+            if o < e0: o = m0 + max(0.0, o - s0); break
+    key = "slow%d" % int(time.time()); out = (e - s); src_len = out * r
+    os.makedirs(J(work, "broll"), exist_ok=True)
+    pre = ",".join(x for x in (hdr_filter(work), color_filter(work), fix_filter(work)) if x)
+    vf = (pre + "," if pre else "") + "setpts=%.5f*PTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" % (1.0 / r)
+    log("أصنع الحركة البطيئة بفريمات بينية (%.1f ث)…" % out)
+    run(["ffmpeg", "-v", "error", "-ss", "%.3f" % o, "-t", "%.3f" % (src_len + 0.1), "-i", "cutz.mp4", "-an", "-vf", vf, "-frames:v", str(int(round(out * 30))), "-q:v", "2", "-y", J("broll", key + "_%04d.jpg")], log, cwd=work)
+    n = len([f for f in os.listdir(J(work, "broll")) if f.startswith(key + "_")])
+    if not n: raise RuntimeError("ما قدرت أصنع الحركة البطيئة")
+    st = load_studio(work); st.setdefault("brNeed", {})[key] = [1, n]
+    st.setdefault("brollClips", []).append({"k": key, "s": round(s, 3), "e": round(s + n / 30.0, 3), "mode": "full", "slow": r})
+    if mute:
+        mx = hs_of(st).setdefault("mix", {}); vr = [x for x in mx.get("vr") or [] if x.get("e", 0) <= s + 0.001 or x.get("s", 0) >= e - 0.001]
+        vr.append({"s": round(s, 3), "e": round(e, 3), "g": 0}); mx["vr"] = sorted(vr, key=lambda x: x["s"])
+    wj(J(work, "studio.json"), st); return {"key": key, "frames": n}
+# ── 4.45: تفصيل الموسيقى على طول المقطع (Remix): تنتهي بنهايتها الحقيقية عند آخر المقطع، والقطع على الإيقاع بتلاشي ناعم ──
+def _music_env(f):
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", f, "-ac", "1", "-ar", "22050", "-f", "s16le", "-"], capture_output=True).stdout
+    x = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0; hop = 1102   # 50 جزء من الثانية
+    n = len(x) // hop
+    if n < 40: raise ValueError("الموسيقى قصيرة زيادة")
+    rms = np.sqrt(np.mean(x[:n * hop].reshape(n, hop) ** 2, axis=1)) + 1e-9
+    return rms, len(x) / 22050.0
+def _beat(rms):
+    import numpy as np
+    on = np.maximum(0, np.diff(np.log(rms))); on = on - on.mean()
+    best, per = 0, 10
+    for p in range(6, 21):   # 60 لين 200 ضربة بالدقيقة (كل خانة 50 جزء من الثانية)
+        c = float(np.dot(on[:-p], on[p:]))
+        if c > best: best, per = c, p
+    return per * 0.05
+def music_fit(work, D=None, log=print):
+    f = music_file(work)
+    if not f: raise ValueError("ما فيه موسيقى بالمشروع")
+    if D is None:
+        caps = rj(J(work, "caps.json"), {}) or {}; D = float(caps.get("total") or 0) + float((rj(J(work, "sfx.json"), {}) or {}).get("outro") or 0)
+    D = float(D)
+    if D < 3: raise ValueError("المقطع قصير")
+    import numpy as np
+    rms, M = _music_env(f); P = _beat(rms); xf = 0.25; db = 20 * np.log10(rms)
+    def quiet_near(t, span):   # أهدأ لحظة على ضربة قريبة من t
+        best, bt = None, t
+        k = -int(span / P)
+        while k <= int(span / P):
+            c = round((t + k * P) / 0.05)
+            if 4 <= c < len(db) - 4:
+                v = float(db[c - 2:c + 3].mean())
+                if best is None or v < best: best, bt = v, c * 0.05
+            k += 1
+        return bt
+    out = J(work, ".hs", "music-fit.wav"); os.makedirs(J(work, ".hs"), exist_ok=True)
+    tail = min(10.0, M * 0.3)
+    if M <= D + 0.3:   # أقصر: نكرر الوسط على الإيقاع لين تطول، والنهاية الحقيقية بآخر المقطع
+        a = quiet_near(M * 0.3, 2 * P); b = quiet_near(M * 0.7, 2 * P)
+        if b - a < 4 * P: a, b = M * 0.25, M * 0.75
+        seg_ = max(1.0, b - a - xf); reps = max(0, int(np.ceil((D - M + 0.1) / seg_)) - 1)   # الطول = M + (reps+1)×(b-a) − تلاشي: أقل تكرار يغطي المقطع
+        parts = [(0, b)] + [(a, b)] * reps + [(a, M)]
+    else:
+        a, b = None, None; parts = None
+    if parts is None:   # أطول: نشيل جزء من الوسط (عدد ضربات كامل) بحيث النهاية تجي بآخر المقطع
+        rm_ = M - D - xf   # الطول = M − المحذوف − تلاشي، فنحذف أقل شوي (ضربات كاملة) والفرق ينقص من البداية
+        if rm_ < P: parts = [(0, M)]
+        else:
+            rm_ = int(rm_ / P) * P; c1 = quiet_near(max(4 * P, min(D - tail, M - tail - rm_)), 4 * P)
+            parts = [(0, c1), (c1 + rm_, M)] if c1 + rm_ < M - 1 else [(0, M)]
+    # نبني بالتلاشي بين الأجزاء، وبعدين نقص من البداية الفرق الصغير عشان النهاية تطيح بالضبط على آخر المقطع
+    ins, fl = [], []
+    for i, (s0, e0) in enumerate(parts):
+        ins += ["-i", f]; fl.append("[%d:a]atrim=%.3f:%.3f,asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo[p%d]" % (i, s0, e0, i))
+    cur = "p0"
+    for i in range(1, len(parts)):
+        fl.append("[%s][p%d]acrossfade=d=%.2f:c1=tri:c2=tri[x%d]" % (cur, i, xf, i)); cur = "x%d" % i
+    tmp = out + ".tmp.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-y"] + ins + ["-filter_complex", ";".join(fl), "-map", "[%s]" % cur, tmp], check=True)
+    L = ffdur(tmp) or 0
+    st0 = max(0.0, L - D)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-af", "atrim=%.3f,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.3" % st0, out], check=True)
+    os.remove(tmp)
+    st = load_studio(work); hs_of(st).setdefault("mix", {})["fit"] = {"src": os.path.basename(f), "mt": int(os.path.getmtime(f)), "D": round(D, 2)}; wj(J(work, "studio.json"), st)
+    log("فصّلت الموسيقى على %.1f ث (الإيقاع كل %.2f ث)" % (D, P)); return {"ok": True, "dur": round(ffdur(out) or 0, 2), "target": round(D, 2), "beat": round(P, 2), "parts": len(parts)}
+def music_fit_file(work):
+    """الموسيقى المفصّلة لو مفعّلة ولسه على نفس الملف."""
+    fit = (hs_of(load_studio(work)).get("mix") or {}).get("fit"); f = J(work, ".hs", "music-fit.wav"); src = music_file(work)
+    if not fit or not os.path.isfile(f) or not src or os.path.basename(src) != fit.get("src") or int(os.path.getmtime(src)) != int(fit.get("mt") or 0): return None
+    caps = rj(J(work, "caps.json"), {}) or {}; D = float(caps.get("total") or 0) + float((rj(J(work, "sfx.json"), {}) or {}).get("outro") or 0)
+    if abs(D - float(fit.get("D") or 0)) > 0.3: return None   # طول المقطع تغيّر بعد التفصيل: نرجع للتكرار لين تفصّلها من جديد
+    return f
+def scene_cuts(work, thr=0.32):
+    """4.44: يكتشف القطعات بالمقطع (Scene Edit Detection): أوقات تبديل اللقطة بالثواني (على المقطع الحالي)."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", "cutz.mp4", "-vf", "scale=270:-2,select='gt(scene,%.2f)',showinfo" % thr, "-an", "-f", "null", "-"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=work, timeout=900)
+    out = []
+    for m in re.finditer(r"pts_time:([\d.]+)", r.stderr):
+        tt = round(float(m.group(1)), 2)
+        if not out or tt - out[-1] > 0.4: out.append(tt)
+    return out
 def vfr_extract(work, log, level=None):
     """يطلّع فريمات المعاينة والتصدير من cutz.mp4 (بالتحسين لو مشغّل). تنكتب بمجلد مؤقت وتتبدّل مرة وحدة."""
     level = level or enh_level(work); src = J(work, "cutz.mp4"); w, h = vid_size(src); ch = enh_filter(level, w, h)
+    sl = stab_level(work); sch = stab_filter(work, sl, log, w, h) if sl in STAB_CFG else ""   # 4.40: التثبيت قبل التحسين (على مقاس الفيديو نفسه)
+    if sch: log("أثبّت الصورة (%s)…" % {"light": "خفيف", "strong": "قوي"}[sl]); ch = sch + ("," + ch if ch else "")
+    hk = hdr_info(work)["kind"] if hdr_level(work) != "off" else None; hch = hdr_filter(work)   # 4.41: ألوان HDR أول شي (قبل التثبيت والتحسين)
+    fch = fix_filter(work, None, w, h)   # 4.44: تلوين دقيق، تنعيم البشرة، إزالة عنصر (قبل التثبيت)
+    if fch: log("أطبّق تعديلات الصورة…"); ch = fch + ("," + ch if ch else "")
+    cch = color_filter(work)   # 4.43: الـLUT أو تحويل Log (بعد HDR وقبل التثبيت)
+    if cch: log("أطبّق ألوانك (%s)…" % ("LUT" if "lut3d" in cch else "Log")); ch = cch + ("," + ch if ch else "")
+    if hch: log("أصلّح ألوان الفيديو (HDR ← SDR)…"); ch = hch + ("," + ch if ch else "")
     new, old = J(work, ".hs", "vfr.new"), J(work, ".hs", "vfr.old")
     shutil.rmtree(new, ignore_errors=True); shutil.rmtree(old, ignore_errors=True); os.makedirs(new)
-    if ch: log("أحسّن الجودة (%s)…" % {"light": "خفيف", "strong": "قوي"}[level])
+    if level in ("light", "strong"): log("أحسّن الجودة (%s)…" % {"light": "خفيف", "strong": "قوي"}[level])
     run(["ffmpeg", "-v", "error", "-i", src, "-vf", "fps=30" + ("," + ch if ch else ""), "-q:v", "2", "-y", os.path.join(new, "%05d.jpg")], log, cwd=work)
     if os.path.isdir(J(work, "vfr")): os.replace(J(work, "vfr"), old)
     os.replace(new, J(work, "vfr")); shutil.rmtree(old, ignore_errors=True)
-    os.makedirs(J(work, ".hs"), exist_ok=True); wj(J(work, ".hs", "enhance.json"), {"level": level, "at": int(time.time())})
+    os.makedirs(J(work, ".hs"), exist_ok=True); wj(J(work, ".hs", "enhance.json"), {"level": level, "stab": sl, "at": int(time.time()), **({"hdr": hk or "hlg"} if hch else {}), **({"color": cch} if cch else {})})
 def quality_preview(work, t, level):
     """قبل وبعد لنفس اللقطة (تفاصيل بالحجم الحقيقي من نص الصورة)."""
     ok, vm = media_map(work); o = float(t)
@@ -701,10 +914,227 @@ def quality_preview(work, t, level):
             if o < e0: o = m0 + max(0.0, o - s0); break
     src = J(work, "cutz.mp4"); w, h = vid_size(src); ch = enh_filter(level if level in ("light", "strong") else "light", w, h)
     base = "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920"
+    hch = hdr_filter(work)   # 4.41: القبل والبعد بألوان مصلّحة لو الفيديو HDR
+    if hch: base = hch + "," + base
     vf = "[0:v]%s,split[o][x];[x]%s[e];[o]crop=540:760:270:520[oc];[e]crop=540:760:270:520[ec];[oc][ec]hstack" % (base, ch or "null")
     out = J(work, ".hs", "qprev.jpg")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % max(0.0, o), "-i", src, "-frames:v", "1", "-filter_complex", vf, "-q:v", "2", out], check=True, timeout=60)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % max(0.0, o), "-i", src, "-frames:v", "1", "-filter_complex", vf, "-q:v", "2", out], check=True, timeout=60, cwd=work)
     return out
+# ── 4.40: تثبيت الصورة (Stabilize): التصوير باليد أو وأنت تمشي يهتز، يتثبّت على جهازك بـ vid.stab (اللي داخل ffmpeg) قبل الكابشن والعناصر ──
+STAB_LEVELS = ("off", "light", "strong")
+STAB_CFG = {"light": (15, 48, 0.035), "strong": (30, 90, 0.06)}   # النعومة (فريمات) · أقصى إزاحة (بكسل على 1080) · أقصى ميلان (راديان)
+STAB_OK, STAB_STRONG = 4.5, 9.0   # متوسط الاهتزاز بالبكسل على عرض 1080: أقل من 4.5 ثابتة · لين 9 خفيف · فوقها قوي
+_TRF_LM = re.compile(r"\(LM (-?\d+) (-?\d+) (-?\d+) (-?\d+) (\d+) ([-\d.eE]+) ([-\d.eE]+)\)")
+def stab_level(work):
+    l = (hs_of(load_studio(work)).get("stab") or {}).get("level"); return l if l in STAB_LEVELS else "off"
+def stab_has(): return ff_has("vidstabdetect") and ff_has("vidstabtransform")
+def _trf_read(p):
+    """ملف حركة vid.stab: النص القديم، أو الثنائي (TRF1) اللي يكتبه ffmpeg الجديد (vid.stab 1.1.1+). الحركة لكل فريم: (vx vy fx fy size contrast match)."""
+    with open(p, "rb") as f: raw = f.read()
+    if raw[:3] == b"TRF":
+        import struct; hdr, fr, o = raw[:24], [], 24   # TRF1 + accuracy + shakiness + stepSize (int32) + contrastThreshold (double)
+        while o + 8 <= len(raw):
+            n, k = struct.unpack_from("<ii", raw, o); o += 8; L = []
+            for _ in range(max(0, k)):
+                if o + 26 > len(raw): break
+                L.append(struct.unpack_from("<hhhhhdd", raw, o)); o += 26
+            fr.append((n, [tuple(float(x) for x in t) for t in L]))
+        return hdr, fr
+    hdr, fr = [], []
+    with open(p, encoding="utf-8", errors="replace") as f:
+        for ln in f:
+            if ln.startswith("Frame "):
+                m = re.match(r"Frame (\d+) \(List \d+ \[(.*)\]\)", ln.strip())
+                fr.append((int(m.group(1)), [tuple(float(x) for x in g) for g in _TRF_LM.findall(m.group(2))]) if m else (len(fr) + 1, []))
+            elif not fr: hdr.append(ln)
+    return hdr, fr
+def _trf_write(p, hdr, fr, k=1.0, cut=()):
+    """نفس ملف vid.stab بعد ما نكبّر الحركة لمقاس الفيديو (التحليل كان على نسخة أصغر)، ونصفّر فريمات القص (القفزة بين لقطتين مو اهتزاز)."""
+    if isinstance(hdr, bytes):   # الصيغة الثنائية: نكتبها بنفس صيغتها
+        import struct; out = bytearray(hdr); c16 = lambda v: max(-32768, min(32767, int(round(v))))
+        for n, L in fr:
+            L = [] if n in cut else L
+            out += struct.pack("<ii", int(n), len(L))
+            for a, b, c, d, e, g, h in L: out += struct.pack("<hhhhhdd", c16(a * k), c16(b * k), c16(c * k), c16(d * k), max(1, c16(e * k)), g, h)
+        with open(p, "wb") as f: f.write(bytes(out))
+        return
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        f.write("".join(hdr))
+        for n, L in fr:
+            L = [] if n in cut else L
+            f.write("Frame %d (List %d [%s])\n" % (n, len(L), ",".join("(LM %d %d %d %d %d %.6f %.6f)" % (round(a * k), round(b * k), round(c * k), round(d * k), max(1, round(e * k)), g, h) for a, b, c, d, e, g, h in L)))
+def _med(v):
+    v = sorted(v); n = len(v); return 0.0 if not n else (v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2)
+def stab_jitter(mv, cuts, win=15):
+    """متوسط الاهتزاز (بكسل على عرض 1080): الفرق بين مسار الكاميرا ومساره الناعم، داخل كل لقطة لحالها."""
+    segs, cur = [], []
+    for i, (dx, dy, n) in enumerate(mv):
+        if i in cuts or n == 0:
+            if len(cur) > 5: segs.append(cur)
+            cur = []; continue
+        cur.append((dx, dy))
+    if len(cur) > 5: segs.append(cur)
+    tot, cnt, h = 0.0, 0, win // 2
+    for s in segs:
+        px, py, x, y = [], [], 0.0, 0.0
+        for dx, dy in s: x += dx; y += dy; px.append(x); py.append(y)
+        for i in range(len(s)):
+            a, b = max(0, i - h), min(len(s), i + h + 1)
+            ex = px[i] - sum(px[a:b]) / (b - a); ey = py[i] - sum(py[a:b]) / (b - a); tot += (ex * ex + ey * ey) ** 0.5; cnt += 1
+    return tot / max(1, cnt)
+def stab_seams(work):
+    """أرقام فريمات القص داخل cutz.mp4 (من القص اللي انبنى منه الفيديو)، بترقيم vid.stab (يبدأ من 1)."""
+    keep = _segs((rj(media_path(work), {}) or {}).get("keep")) or _segs((rj(J(work, "cut.json"), {}) or {}).get("keep")); out, acc = set(), 0.0
+    for a, b in keep[:-1]: acc += b - a; out.add(int(round(acc * 30)) + 1)
+    return out
+def _stab_key(src):
+    try: s_ = os.stat(src); return "%d-%d" % (int(s_.st_mtime), s_.st_size)
+    except OSError: return ""
+def stab_info(work):
+    """آخر فحص للاهتزاز لو لسه على نفس الفيديو (وإلا None)."""
+    I = rj(J(work, ".hs", "stab.json"), None)
+    return I if isinstance(I, dict) and I.get("key") == _stab_key(J(work, "cutz.mp4")) and os.path.isfile(J(work, ".hs", "stab.trf")) else None
+def stab_analyze(work, log=print, force=False):
+    """يحلل حركة الكاميرا مرة وحدة لكل فيديو (vidstabdetect على نسخة 540)، ويحفظ الحركة بمقاس الفيديو ودرجة الاهتزاز."""
+    src = J(work, "cutz.mp4")
+    if not os.path.isfile(src): raise ValueError("ما فيه مقطع مقصوص")
+    if not stab_has(): raise ValueError("ffmpeg اللي عندك ما فيه vid.stab، فالتثبيت يمشي بالطريقة البسيطة (deshake) بدون فحص")
+    I = None if force else stab_info(work)
+    if I: return I
+    w, h = vid_size(src); aw = min(540, w or 540) // 2 * 2; os.makedirs(J(work, ".hs"), exist_ok=True); log("أفحص حركة الكاميرا…")
+    run(["ffmpeg", "-v", "error", "-y", "-i", "cutz.mp4", "-vf", "fps=30,scale=%d:-2,vidstabdetect=shakiness=5:accuracy=9:result=.hs/stab.raw.trf" % aw, "-f", "null", "-"], log, cwd=work)
+    hdr, fr = _trf_read(J(work, ".hs", "stab.raw.trf")); k1 = 1080.0 / aw
+    mv = [(_med([x[0] for x in L]) * k1, _med([x[1] for x in L]) * k1, len(L)) for n, L in fr]
+    jump = {fr[i][0] for i, (dx, dy, n) in enumerate(mv) if (dx * dx + dy * dy) ** 0.5 > 86}   # قفزة أكبر من 8% من العرض بفريم واحد = قطع (تبديل متكلم، لقطة ثانية)
+    cut = stab_seams(work) | jump; _trf_write(J(work, ".hs", "stab.trf"), hdr, fr, (w or aw) / float(aw), cut)
+    try: os.remove(J(work, ".hs", "stab.raw.trf"))
+    except OSError: pass
+    j = round(stab_jitter(mv, {i for i, (n, L) in enumerate(fr) if n in cut}), 2)
+    I = {"key": _stab_key(src), "jitter": j, "level": "ok" if j < STAB_OK else ("light" if j < STAB_STRONG else "strong"), "frames": len(fr), "cuts": len(cut), "at": int(time.time())}
+    wj(J(work, ".hs", "stab.json"), I); return I
+def stab_filter(work, level=None, log=print, w=0, h=0):
+    """فلتر التثبيت لسلسلة الفريمات (يشتغل بمجلد المشروع: المسار نسبي عشان ويندوز). مطفي = نص فاضي، فالفريمات نفسها بالضبط."""
+    level = level or stab_level(work)
+    if level not in STAB_CFG: return ""
+    sm, ms, ma = STAB_CFG[level]
+    if not w or not h: w, h = vid_size(J(work, "cutz.mp4"))
+    if stab_has():
+        stab_analyze(work, log)
+        k = (w or 1080) / 1080.0
+        return "vidstabtransform=input=.hs/stab.trf:smoothing=%d:optzoom=1:maxshift=%d:maxangle=%.3f:interpol=bilinear:crop=keep,unsharp=5:5:0.25:5:5:0" % (sm, int(ms * k), ma)
+    z = 1.06 if level == "light" else 1.1   # البديل لو ffmpeg بدون vid.stab: deshake وتكبير بسيط يخفي الأطراف
+    return "deshake=rx=%d:ry=%d:edge=clamp,scale=%d:%d,crop=%d:%d" % (32 if level == "light" else 64, 32 if level == "light" else 64, int(w * z) // 2 * 2, int(h * z) // 2 * 2, w, h)
+def stab_preview(work, t, level):
+    """قبل وبعد يتحركون جنب بعض (4 ثواني من نفس اللحظة)، عشان تشوف الفرق بالحركة نفسها."""
+    level = level if level in STAB_CFG else "light"; ok, vm = media_map(work); o = max(0.0, float(t))
+    if vm:
+        for s0, e0, m0 in vm:
+            if o < e0: o = m0 + max(0.0, o - s0); break
+    src = J(work, "cutz.mp4"); w, h = vid_size(src); d = max(1.0, min(4.0, (probe_dur(src) or 4.0) - o)); out = J(work, ".hs", "sprev.mp4")
+    if stab_has():
+        stab_analyze(work); hdr, fr = _trf_read(J(work, ".hs", "stab.trf")); n0 = int(round(o * 30)) + 1; n1 = n0 + int(d * 30) + 2
+        _trf_write(J(work, ".hs", "stab.prev.trf"), hdr, [(n - n0 + 1, L) for n, L in fr if n0 <= n <= n1])
+        sm, ms, ma = STAB_CFG[level]
+        ch = "vidstabtransform=input=.hs/stab.prev.trf:smoothing=%d:optzoom=1:maxshift=%d:maxangle=%.3f:interpol=bilinear:crop=keep" % (min(sm, int(d * 30) // 3), int(ms * (w or 1080) / 1080.0), ma)
+    else: ch = stab_filter(work, level, w=w, h=h)
+    hch = hdr_filter(work)   # 4.41
+    vf = "[0:v]fps=30%s,split[a][b];[b]%s[s];[a]scale=360:-2[a2];[s]scale=360:-2[s2];[a2][s2]hstack" % (("," + hch) if hch else "", ch)
+    base_ = ["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % o, "-t", "%.3f" % d, "-i", "cutz.mp4", "-filter_complex", vf, "-an", "-pix_fmt", "yuv420p"]
+    try: run(base_ + ["-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "2M", ".hs/sprev.webm"], lambda *a: None, cwd=work); return J(work, ".hs", "sprev.webm")   # webm يشتغل بكل متصفح
+    except Exception: pass
+    run(base_ + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-movflags", "+faststart", ".hs/sprev.mp4"], lambda *a: None, cwd=work)
+    return out
+# ── 4.41: ألوان الآيفون (HDR): فيديو الآيفون والأندرويد يجي HDR (HLG أو PQ)، وبدون محوّل أبل (ويندوز) يطلع باهت ورمادي.
+#    نصلّحه على جهازك بجدول ألوان (LUT) نحسبه ببايثون على معيار BT.2100 وBT.2408 (الأبيض المرجعي 203 nits = أبيض SDR)، وffmpeg يطبّقه بـlut3d.
+HDR_LEVELS = ("auto", "on", "off")
+HDR_CUBE_V = "v1"
+def hdr_level(work):
+    l = (hs_of(load_studio(work)).get("hdr") or {}).get("level"); return l if l in HDR_LEVELS else "auto"
+_HDRK = {}
+def hdr_kind(path):
+    """«hlg» أو «pq» لو الملف موسوم HDR، وإلا None."""
+    try: s_ = os.stat(path); k = (path, int(s_.st_mtime), s_.st_size)
+    except OSError: return None
+    if k not in _HDRK:
+        try: ct = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_transfer", "-of", "csv=p=0", path], capture_output=True, text=True, timeout=30).stdout.strip().split("\n")[0].strip().strip(",")
+        except Exception: ct = ""
+        _HDRK[k] = {"arib-std-b67": "hlg", "smpte2084": "pq"}.get(ct)
+    return _HDRK[k]
+def hdr_info(work):
+    """هل فريمات cutz.mp4 فيها ألوان HDR خام؟ (الأصل HDR وما انحوّل بمحوّل أبل، أو cutz نفسه موسوم HDR)."""
+    cz = J(work, "cutz.mp4"); apple = os.path.isfile(J(work, "src_sdr.mov"))
+    src = next((p for p in (J(work, "src.mov"), J(work, "src-cutz.mp4")) if os.path.isfile(p)), None)
+    k_src = hdr_kind(src) if src else None; k_cz = hdr_kind(cz) if os.path.isfile(cz) else None
+    kind = k_cz or (None if apple else k_src)
+    lv = hdr_level(work); app = (rj(J(work, ".hs", "enhance.json"), {}) or {}).get("hdr")
+    on = (lv == "auto" and bool(kind)) or lv == "on"
+    return {"kind": kind, "src": k_src, "apple": apple and bool(k_src), "need": bool(kind), "level": lv, "on": on, "applied": app or None,
+            "washed": bool(kind) and not app and lv != "off" and os.path.isdir(J(work, "vfr"))}
+def hdr_cube(kind="hlg", n=33):
+    """جدول ألوان .cube من HDR (BT.2020، HLG أو PQ) لـSDR (BT.709): الأبيض المرجعي 203 nits يصير أبيض، واللمعة فوقه تنضغط بنعومة، والألوان برا BT.709 تنقص."""
+    a, b, c = 0.17883277, 0.28466892, 0.55991073
+    m1, m2, c1, c2, c3 = 0.1593017578125, 78.84375, 0.8359375, 18.8515625, 18.6875
+    M = ((1.6605, -0.5876, -0.0728), (-0.1246, 1.1329, -0.0083), (-0.0182, -0.1006, 1.1187))
+    K = 0.72; ex = math.exp
+    inv_hlg = lambda v: v * v / 3.0 if v <= 0.5 else (ex((v - c) / a) + b) / 12.0
+    def pq(v):
+        p = max(v, 0.0) ** (1 / m2); return 10000.0 * (max(p - c1, 0.0) / (c2 - c3 * p)) ** (1 / m1)
+    hl = [inv_hlg(i / (n - 1.0)) for i in range(n)]; pl = [pq(i / (n - 1.0)) / 203.0 for i in range(n)]
+    out = ["TITLE \"hojas hdr2sdr %s %s\"" % (kind, HDR_CUBE_V), "LUT_3D_SIZE %d" % n]
+    for bi in range(n):
+        for gi in range(n):
+            for ri in range(n):
+                if kind == "pq": R, G, B = pl[ri], pl[gi], pl[bi]
+                else:
+                    R, G, B = hl[ri], hl[gi], hl[bi]; Y = 0.2627 * R + 0.6780 * G + 0.0593 * B
+                    s = (1000.0 / 203.0) * (Y ** 0.2 if Y > 0 else 0.0); R, G, B = R * s, G * s, B * s   # OOTF (gamma 1.2 على شاشة 1000 nits)
+                R, G, B = (max(0.0, M[i][0] * R + M[i][1] * G + M[i][2] * B) for i in range(3))
+                mx = max(R, G, B)
+                if mx > K: f = (K + (1 - K) * (1 - ex(-(mx - K) / (1 - K)))) / mx; R, G, B = R * f, G * f, B * f
+                out.append("%.5f %.5f %.5f" % (min(1.0, R) ** (1 / 2.4), min(1.0, G) ** (1 / 2.4), min(1.0, B) ** (1 / 2.4)))
+    return "\n".join(out) + "\n"
+def hdr_cube_file(work, kind):
+    """يكتب الجدول بمجلد .hs بالمشروع مرة وحدة، ويرجّع مساره النسبي (ffmpeg يشتغل بمجلد المشروع عشان مسار ويندوز)."""
+    rel = ".hs/hdr-%s.cube" % kind; p = J(work, ".hs", "hdr-%s.cube" % kind); os.makedirs(J(work, ".hs"), exist_ok=True)
+    try: ok = HDR_CUBE_V in open(p, encoding="utf-8").readline()
+    except OSError: ok = False
+    if not ok:
+        tmp = p + ".tmp"; open(tmp, "w", encoding="utf-8", newline="\n").write(hdr_cube(kind)); os.replace(tmp, p)
+    return rel
+def hdr_vf(work, kind):
+    """سلسلة الفلاتر: نقرا الألوان بمصفوفة BT.2020 ثم الجدول. لازم ffmpeg يشتغل بـcwd=work."""
+    if kind not in ("hlg", "pq"): return ""
+    return "scale=in_color_matrix=bt2020:in_range=tv:out_range=pc,format=gbrp16le,lut3d=file=%s:interp=tetrahedral,format=yuvj420p" % hdr_cube_file(work, kind)   # gbrp16le أسرع صيغة للجدول
+def hdr_filter(work, level=None):
+    """فلتر التصليح لفريمات المقطع. مطفي أو فيديو عادي = نص فاضي، فالفريمات نفسها بالضبط."""
+    level = level or hdr_level(work); I = hdr_info(work)
+    if level == "off" or (level == "auto" and not I["kind"]): return ""
+    return hdr_vf(work, I["kind"] or "hlg")
+def hdr_preview(work, t, level="auto"):
+    """صورة قبل وبعد لنفس اللحظة (الصورة كاملة جنب بعض)."""
+    ok, vm = media_map(work); o = max(0.0, float(t))
+    if vm:
+        for s0, e0, m0 in vm:
+            if o < e0: o = m0 + max(0.0, o - s0); break
+    ch = hdr_filter(work, "on" if level == "off" else level) or "null"; os.makedirs(J(work, ".hs"), exist_ok=True)
+    vf = "[0:v]split[a][b];[b]%s,scale=480:-2[s];[a]scale=480:-2[o];[o][s]hstack" % ch
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % o, "-i", "cutz.mp4", "-frames:v", "1", "-filter_complex", vf, "-q:v", "2", J(".hs", "hprev.jpg")], check=True, timeout=60, cwd=work)
+    return J(work, ".hs", "hprev.jpg")
+def broll_hdr_fix(work, key, log=print):
+    """لقطة بي-رول رفعتها من الجوال وهي HDR (وما انحوّلت بمحوّل أبل): نطلّع فريماتها من جديد بالألوان الصح."""
+    if not key or glob.glob(J(work, "broll_src", key + "_sdr.*")): return None
+    src = next((p for p in sorted(glob.glob(J(work, "broll_src", key + ".*"))) if os.path.splitext(p)[1].lower() in VID_EXT), None)
+    kind = hdr_kind(src) if src else None
+    if not kind: return None
+    fr = glob.glob(J(work, "broll", key + "_*.jpg")); tmp = J(work, "broll", ".hdr-" + key); shutil.rmtree(tmp, ignore_errors=True); os.makedirs(tmp)
+    try:
+        run(["ffmpeg", "-v", "error", "-i", os.path.relpath(src, work), "-vf", "fps=30," + hdr_vf(work, kind) + ",scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", "-q:v", "3", "-y", os.path.join(os.path.relpath(tmp, work), key + "_%04d.jpg")], log, cwd=work)
+        new = sorted(os.listdir(tmp))
+        if not new: return None
+        for f in fr: os.remove(f)
+        for f in new: os.replace(os.path.join(tmp, f), J(work, "broll", f))
+    finally: shutil.rmtree(tmp, ignore_errors=True)
+    return kind
 # ── 4.27: مكان الفيديو بالكادر: تشوف الصورة الأصلية كاملة وتحرك المربع وتكبّر، والفيديو يتقص من الأصل من جديد ──
 def vpos_info(work):
     cut_ = rj(J(work, "cut.json"), {}) or {}; src = J(work, "src.mov")
@@ -1380,6 +1810,65 @@ def gloss_apply_words(words):
             out.append({**w0, "t": rep + (tail.group(0) if tail else ""), "e": w1["e"], "lo": False}); out[-1].pop("lo"); i += L; ch += 1
         else: out.append(words[i]); i += 1
     return out, ch
+# ── 4.43: «راجع الكابشن مع المساعد»: Claude يكتب .hs/caps_review.json (تصحيحات مقترحة + أسئلة بخيارات)، والمستخدم يختار وش ينطبق ──
+def capr_path(work): return J(work, ".hs", "caps_review.json")
+def capr_load(work):
+    r = rj(capr_path(work), None)
+    if not isinstance(r, dict) or r.get("dismissed"): return None
+    cards = (rj(J(work, "caps.json"), {}) or {}).get("cards") or []
+    def card_n(x):
+        try: n = int(x)
+        except (TypeError, ValueError): return None
+        return n if 1 <= n <= len(cards) else None
+    fx, qs = [], []
+    for i, f in enumerate(r.get("fixes") or []):
+        if not isinstance(f, dict): continue
+        n = card_n(f.get("card")); fr = str(f.get("from") or "").strip(); to = str(f.get("to") or "").strip()
+        if not n or not fr or not to or fr == to: continue
+        fx.append({"id": str(f.get("id") or "f%d" % (i + 1)), "card": n, "t": cards[n - 1]["s"], "from": fr, "to": to, "why": str(f.get("why") or "")[:160], "done": f.get("done"), "skip": bool(f.get("skip"))})
+    for i, q in enumerate(r.get("asks") or []):
+        if not isinstance(q, dict): continue
+        cs = [n for n in (card_n(x) for x in (q.get("cards") or [q.get("card")])) if n]
+        opts = [str(o).strip() for o in q.get("opts") or [] if str(o).strip()][:4]
+        if not cs or len(opts) < 2 or not str(q.get("q") or "").strip(): continue
+        qs.append({"id": str(q.get("id") or "q%d" % (i + 1)), "cards": cs, "t": cards[cs[0] - 1]["s"], "from": str(q.get("from") or "").strip(), "q": str(q["q"])[:220], "opts": opts, "note": str(q.get("note") or "")[:120], "answer": q.get("answer")})
+    return {"summary": str(r.get("summary") or "")[:300], "fixes": fx, "asks": qs}
+def capr_replace(work, n, fr, to, learn=True):
+    """يبدّل كلمات (fr) بجملة رقم n بكلمات (to). يطابق كلمات كاملة بالترتيب، مو جزء من كلمة."""
+    caps = rj(J(work, "caps.json"), {}) or {}; cards = caps.get("cards") or []
+    if not (1 <= n <= len(cards)) or not fr.split(): return False
+    ws = [w["t"] for w in cards[n - 1]["w"]]; f = fr.split(); k = len(f)
+    at = next((i for i in range(len(ws) - k + 1) if ws[i:i + k] == f), None)
+    if at is None: return False
+    new = ws[:at] + to.split() + ws[at + k:]
+    if not new: return False
+    apply_text(work, n - 1, " ".join(new))
+    if learn:
+        try: gloss_learn(caps, rj(J(work, "caps.json")))   # التصحيح ينحفظ بقاموسك للمقاطع الجاية
+        except Exception: pass
+    return True
+def capr_act(work, act, ids=None, qid=None, opt=None, learn=True):
+    raw = rj(capr_path(work), {}) or {}
+    if act == "apply":
+        ids = [str(x) for x in ids or []]
+        for i, f in enumerate(raw.get("fixes") or []):
+            if not isinstance(f, dict) or f.get("done") or f.get("skip"): continue
+            fid = str(f.get("id") or "f%d" % (i + 1))
+            if fid in ids:
+                try: f["done"] = bool(capr_replace(work, int(f.get("card") or 0), str(f.get("from") or "").strip(), str(f.get("to") or "").strip(), learn)) or "miss"
+                except (TypeError, ValueError): f["done"] = "miss"
+            else: f["skip"] = True
+    elif act == "answer":
+        for i, q in enumerate(raw.get("asks") or []):
+            if not isinstance(q, dict) or str(q.get("id") or "q%d" % (i + 1)) != str(qid): continue
+            fr = str(q.get("from") or "").strip(); opt = str(opt or "").strip()
+            if opt and fr and opt != fr:
+                for n in (q.get("cards") or [q.get("card")]):
+                    try: capr_replace(work, int(n), fr, opt, learn)
+                    except (TypeError, ValueError): pass
+            q["answer"] = opt
+    elif act == "dismiss": raw["dismissed"] = True
+    wj(capr_path(work), raw); return capr_load(work)
 def gloss_learn(old_caps, new_caps):
     """يقارن الكابشن قبل وبعد تعديلك: الكلمة اللي صححتها (اسم، أو كتابة قريبة من الغلط، أو كلمة ما تأكد منها التفريغ) تنحفظ بالقاموس."""
     try:
@@ -1572,6 +2061,34 @@ def plan_build(work):
     hs["layers"] = Ls
     if p.get("look") and not hs.get("look") and p["look"] in looks_all(): wj(J(work, "studio.json"), st); look_apply(work, p["look"]); st = load_studio(work); hs_of(st)["layers"] = Ls
     wj(J(work, "studio.json"), st); return n, miss
+# ── 4.43: الخطة كخطوة: فكرتك ← الخطة بصورها ← وافق وابنِ. الصور الحقيقية أول (بنترست بإذنه، أرشيف مفتوح، أو من جهازه)، والتوليد بس لو ما فيه صورة ──
+PLAN_IMG = ("pin", "web", "me"); PLAN_GEN = ("code", "chat", "higgs")
+def plan_task(work, pl, ask=""):
+    idea = str(pl.get("idea") or "").strip()
+    t = "اكتب خطة المقطع بملف plan.json بمجلد المشروع %s. اقرأ الكلام بأوقاته: python hs.py text \"%s\" show (وأوقات الكلمات بـ caps.json).\n" % (work, work)
+    if idea: t += "فكرة المستخدم للمقطع: «%s».\n" % idea[:800]
+    if ask: t += "وطلبه على الخطة: «%s».\n" % ask[:800]
+    t += ("قسّم الكلام لمشاهد (كل مشهد فكرة وحدة، 2 إلى 6 ثواني). كل بند: id، s، e (بالثواني)، title (عنوان قصير)، speech (كلامه بهذا الجزء حرفياً)، show (وش يطلع على الشاشة بالضبط)، motion (الحركة)، "
+          "kind (web = صورة حقيقية من السوشل أو الإنترنت، archive = أرشيف حقيقي، gen = صورة تتولد، overlay = عنصر فوق الفيديو، text = نص، none = وجهه بس)، query (كلمات بحث للصورة الحقيقية) أو prompt (وصف إنجليزي للتوليد لو gen).\n"
+          "الأولوية للصور الحقيقية (web أو archive) لأي شي له صورة حقيقية: شخص، مكان، منتج، حدث، شعار. gen بس للأفكار اللي ما لها صورة حقيقية. لا تحط صورة على كل جملة: خلّ وجهه يبان بين المشاهد.\n"
+          "لا تغيّر كلامه ولا تخترع معلومة. خلّ approved=false وfeedback فاضي، وidea وprefs مثل ما هي بالملف. وتأكد: python hs.py plan \"%s\" check") % work
+    return t
+def planimg_task(work, pl, ids=None):
+    src = [x for x in ((pl.get("prefs") or {}).get("img") or ["pin", "web"]) if x in ("pin", "web")] or ["web"]
+    t = ("جِب صور حقيقية لبنود الخطة بملف plan.json بمجلد %s: البنود اللي kind فيها web أو archive وما فيها src%s. لكل بند ابحث بـ query (أو title وshow).\n" % (work, (" (بس البنود: %s)" % ", ".join(map(str, ids))) if ids else ""))
+    st = []
+    if "pin" in src: st.append("بنترست: المستخدم وافق تتصفح بنترست من متصفحه. افتح https://www.pinterest.com/search/pins/?q=<كلمات البحث> بأدوات claude-in-chrome، وافتح الصورة المناسبة وخذ رابطها الأصلي (i.pinimg.com). لا تسجل دخول، ولا تحفظ ولا تنشر ولا تتابع شي بحسابه، ولا تضغط إعلانات")
+    if "web" in src: st.append("الأرشيف المفتوح: python hs.py media \"%s\" search <كلمات إنجليزية> (صور برخص مفتوحة)" % work)
+    t += "الترتيب: " + "، ثم ".join(st) + ".\n"
+    t += ("نزّل الصورة المختارة لـ assets/plan-<id>.<jpg أو png> بمجلد المشروع، وبعدها بـ plan.json حط بالبند src=\"assets/plan-<id>.<ext>\" وsrcBy (pinterest أو archive) وsrcUrl (رابط صفحة الصورة).\n"
+          "اختر صورة واضحة تطابق الكلام بالضبط، عمودية أو تنقص لعمودي، بدون علامة مائية كبيرة. لو ما لقيت شي مناسب خلّ البند بدون src وغيّر kind لـ gen وحط prompt يوصف الصورة. لا تغيّر أي شي ثاني بالخطة.")
+    return t
+def plangen_task(work, ids, engine):
+    who = {"code": "ارسمها أنت بالكود: اكتب SVG بمقاس 1080x1920 (viewBox=\"0 0 1080 1920\") بأسلوب رسم بسيط وواضح، واحفظه assets/plan-<id>.svg",
+           "chat": "ولّدها من حساب المستخدم في ChatGPT (https://chatgpt.com) بمتصفحه بأدوات claude-in-chrome. هو مسجّل دخول؛ لا تكتب باسورد ولا تغيّر إعدادات. الصق الوصف واطلب صورة عمودية 9:16 بدون كتابة، وانتظر الصورة ونزّلها لـ assets/plan-<id>.png. لو ChatGPT ما اشتغل جرّب Gemini (https://gemini.google.com/app)",
+           "higgs": "ولّدها من حساب المستخدم في Higgsfield (أداة generate_image، عمودي 9:16، بدون كتابة)، وانتظر النتيجة ونزّلها لـ assets/plan-<id>.png. المستخدم وافق إنها تصرف من رصيده للبنود هذي بس"}[engine]
+    return ("اصنع صور بنود الخطة رقم %s بملف plan.json بمجلد %s. لكل بند خذ prompt (أو show) وخلّ الصور كلها بستايل واحد، بدون كتابة داخل الصورة. %s.\n"
+            "بعدها بـ plan.json حط بالبند src=\"assets/plan-<id>.<ext>\" وsrcBy=\"%s\". لا تصنع غير البنود المطلوبة، ولا تغيّر أي شي ثاني بالخطة.") % (", ".join(map(str, ids)), work, who, engine)
 PLAN_MG_AT = ("stat", "slam", "ring", "callout", "logo", "quote")   # هذي تطلع لحظة ما يقول الكلمة، والقوائم كل سطر مع كلمته
 def plan_mg(work, it, Ls, s0, e0, pid, over):
     n = 0; ms = it.get("mg"); ms = [ms] if isinstance(ms, dict) else list(ms or [])
@@ -1652,11 +2169,15 @@ def steps(work):
     try: tk_pending = bool(tk) and tk_view(work).get("pending")
     except Exception: tk_pending = False
     unsure = sum(1 for c in (caps or {}).get("cards") or [] for w in c["w"] if w.get("lo"))
-    S_ = [("takes", "الجمل", "done" if tk and not tk_pending else ("now" if os.path.isfile(J(work, "a.json")) else "todo")),
-          ("caps", "الكابشن", "done" if caps and not unsure else ("now" if caps else "todo")),
+    H_ = hs_of(st); cutj = rj(J(work, "cut.json"), {}) or {}
+    tk_ok = bool(tk) and not tk_pending and (cutj.get("takes") or H_.get("stepTakes") or not H_.get("guide"))   # 4.43: بالخطوات لازم يعتمد القص بنفسه
+    notes_open = sum(1 for n in (rj(J(work, "notes.json"), []) or []) if n.get("status") in ("open", "sent", "ask"))
+    S_ = [("takes", "الجمل", "done" if tk_ok else ("now" if os.path.isfile(J(work, "a.json")) else "todo")),
+          ("audio", "الصوت", "done" if H_.get("stepAudio") else ("now" if tk_ok else "todo")),   # 4.43: انتقاء الصوت
+          ("caps", "الكابشن", "done" if caps and (not unsure or H_.get("stepCaps")) else ("now" if caps else "todo")),
           ("plan", "الخطة", "done" if p and p.get("approved") else ("now" if caps else "todo")),
           ("build", "البناء", "done" if Ls and (not p or all(x.get("built") for x in plan_view(work).get("items") or [])) else ("now" if p and p.get("approved") else "todo")),
-          ("export", "التصدير", "done" if ex else ("now" if Ls else "todo"))]
+          ("notes", "الملاحظات", "done" if ex and not notes_open else ("now" if Ls or ex else "todo"))]   # 4.43: الملاحظات بدل التصدير (التصدير زره فوق)
     cur = next((i for i, x in enumerate(S_) if x[2] != "done"), len(S_))
     return [{"k": k, "label": l, "state": "done" if s == "done" else ("now" if i == cur else "todo"), "n": i + 1, "unsure": unsure if k == "caps" else 0} for i, (k, l, s) in enumerate(S_)]
 
@@ -1707,8 +2228,8 @@ def reframe(work, src, ar, cy, log=print):
     """يطلّع نسخة بمقاس ثاني من الماستر العمودي. 4:5 و1:1 قص · 16:9 المقطع بالنص وخلفية مغبّشة منه."""
     if ar == "9:16" or ar not in FRAMES: return None
     out = J(work, "ad-%s.mp4" % ar.replace(":", "x")); w, h = FRAMES[ar]
-    if ar == "16:9": fc = "[0:v]split[a][b];[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=28:3,eq=brightness=-0.14[bg];[b]scale=-2:1080[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p[v]"
-    else: fc = "[0:v]crop=%d:%d:0:%d,format=yuv420p[v]" % (w, h, crop_y0(ar, cy))
+    if ar == "16:9": fc = "[0:v]split[a][b];[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=28:3,eq=brightness=-0.14[bg];[b]scale=-2:1080[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[v]"
+    else: fc = "[0:v]crop=%d:%d:0:%d,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[v]" % (w, h, crop_y0(ar, cy))
     log("نسخة بمقاس %s…" % ar)
     run(["ffmpeg", "-v", "error", "-nostats", "-i", src, "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
          "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-r", "30", "-c:a", "copy", "-movflags", "+faststart", "-y", out], log)
@@ -2088,6 +2609,101 @@ def cmd_bleep(work, args):
         if ok and v not in ok: sys.exit("القيم: " + " | ".join(ok))
         hs.setdefault("bleep", {})[sub] = int(float(v)) if sub == "tone" else v; wj(J(work, "studio.json"), st); print("تم"); return
     sys.exit("bleep: list | word <كلمة> … | at <ث> | add <من> <إلى> | rm <رقم|all> | mode beep|mute | cap stars|hide|keep | tone <هيرتز>")
+# 4.48: إيموجي الكابشن: إيموجي يطلع فوق الكلمة لما تنقال. القاموس والاختيار بـ ext.js (EMOCORE)، وهنا نفس المنطق للطرفية
+EMO_DEF = {"on": False, "pos": "word", "anim": "pop", "size": 88, "gap": 2.5, "only": "all", "set": {}}
+EMO_POS, EMO_ANIMS, EMO_ONLY = ("word", "center"), ("pop", "bounce", "float"), ("all", "hot")
+_EMO = {}
+def emo_core():
+    if not _EMO:
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read()
+        _EMO["dict"] = json.loads(re.search(r"/\*EMOJSON\*/(.*?)/\*EMOJSON\*/", ex_, re.S).group(1))
+        _EMO["pre"] = re.findall(r"'([^']+)'", re.search(r"EMO_PRE=\[([^\]]*)\]", ex_).group(1))
+        _EMO["suf"] = re.findall(r"'([^']+)'", re.search(r"EMO_SUF=\[([^\]]*)\]", ex_).group(1))
+        _EMO["n"] = {emo_norm(k): v for k, v in _EMO["dict"].items()}
+    return _EMO
+def emo_norm(s):
+    s = re.sub(r"[\u064B-\u0652\u0640\u0670]", "", str(s or "").lower())
+    s = re.sub(r"[أإآٱ]", "ا", s).replace("ة", "ه").replace("ى", "ي").replace("ؤ", "و").replace("ئ", "ي")
+    return re.sub(r"[^\u0621-\u064Aa-z0-9]", "", s)
+def emo_match(word):
+    E = emo_core(); w = emo_norm(word)
+    if len(w) < 2: return None
+    c = [w] + [w[len(p):] for p in E["pre"] if w.startswith(p) and len(w) - len(p) >= 2]
+    for b in list(c):
+        for x in E["suf"]:
+            if b.endswith(x) and len(b) - len(x) >= 3:
+                r = b[:-len(x)]; c.append(r)
+                if r.endswith("ت"): c.append(r[:-1] + "ه")
+    for k in c:
+        if k in E["n"]: return E["n"][k]
+    return None
+def emo_of(hs): E = {**EMO_DEF, **((hs or {}).get("emoji") or {})}; E["set"] = dict(E.get("set") or {}); return E
+def emo_plan(cards, E):
+    """نفس emoPlan بـ ext.js: جملة وحدة = إيموجي واحد على الأكثر. اختيارك (set) أول، بعده الكلمات المهمة، بعدها الباقي، وبينهم gap ثانية. '' = بدون."""
+    st_, gap, only, C = E.get("set") or {}, max(0.0, float(2.5 if E.get("gap") is None else E.get("gap"))), E.get("only") or "all", []
+    for ci, c in enumerate(cards or []):
+        ws = c.get("w") or []
+        if not ws: continue
+        k = card_key(c)
+        if k in st_:
+            em = str(st_[k] or "")
+            if not em: continue
+            wi = next((i for i, w in enumerate(ws) if emo_match(w["t"])), -1)
+            if wi < 0: wi = next((i for i, w in enumerate(ws) if w.get("hot")), -1)
+            if wi < 0: wi = (len(ws) - 1) // 2
+            C.append({"ci": ci, "wi": wi, "em": em, "s": ws[wi]["s"], "e": c["e"], "t": ws[wi]["t"], "by": "you", "pr": 2}); continue
+        if E.get("auto") is False: continue
+        best, em = -1, None
+        for i, w in enumerate(ws):
+            if w.get("bl"): continue
+            m = emo_match(w["t"])
+            if not m or (only == "hot" and not w.get("hot")): continue
+            if best < 0 or (w.get("hot") and not ws[best].get("hot")): best, em = i, m
+        if best >= 0: C.append({"ci": ci, "wi": best, "em": em, "s": ws[best]["s"], "e": c["e"], "t": ws[best]["t"], "by": "auto", "pr": 1 if ws[best].get("hot") else 0})
+    keep = []
+    for x in sorted(C, key=lambda x: (-x["pr"], x["s"])):
+        if x["pr"] < 2 and any(abs(y["s"] - x["s"]) < gap for y in keep): continue
+        keep.append(x)
+    return [{k: v for k, v in x.items() if k != "pr"} for x in sorted(keep, key=lambda x: x["s"])]
+def cmd_emoji(work, args):
+    """hs emoji <work> list | on | off | set <رقم الجملة> <إيموجي|none|auto> | clear | pos word|center | anim pop|bounce|float | size 40..200 | gap <ثواني> | only all|hot | auto yes|no"""
+    sub = args[0] if args else "list"; st = load_studio(work); hs = hs_of(st); cards = (rj(J(work, "caps.json"), {}) or {}).get("cards") or []
+    E = hs.setdefault("emoji", {}); save = lambda: wj(J(work, "studio.json"), st)
+    if sub == "list":
+        e_ = emo_of(hs); P = emo_plan(cards, e_)
+        print("إيموجي الكابشن: %s · المكان %s · الحركة %s · الحجم %d · بينهم %.1f ث · %s%s" % ("شغّال" if e_["on"] else "مطفي", e_["pos"], e_["anim"], int(e_["size"]), float(e_["gap"]), "كل الكلمات" if e_["only"] == "all" else "الكلمات المهمة بس", "" if e_.get("auto") is not False else " · اختياراتك بس"))
+        if not P: print("ما فيه إيموجي بالخطة. حط واحد لجملة: hs emoji <work> set <رقم> 🔥"); return
+        for x in P: print("%3d) %6.2f  %s  «%s»%s" % (x["ci"] + 1, x["s"], x["em"], x["t"], "  (اختيارك)" if x["by"] == "you" else ""))
+        if not e_["on"]: print("مطفي: شغّله بـ hs emoji <work> on")
+        return
+    if sub in ("on", "off"): E["on"] = sub == "on"; save(); print("تم: الإيموجي %s (%d بالمقطع)" % ("شغّال" if E["on"] else "مطفي", len(emo_plan(cards, emo_of(hs))))); return
+    if sub == "clear": E["set"] = {}; save(); print("رجعت كل الجمل تلقائي"); return
+    if sub == "set":
+        if len(args) < 3: sys.exit("emoji <work> set <رقم الجملة> <إيموجي|none|auto>")
+        try: c = cards[int(args[1]) - 1]
+        except (ValueError, IndexError): sys.exit("رقم الجملة غلط. شوف: hs text <work>")
+        if int(args[1]) < 1: sys.exit("رقم الجملة غلط. شوف: hs text <work>")
+        k = card_key(c); S_ = E.setdefault("set", {}); v = args[2].strip()
+        if v == "auto": S_.pop(k, None)
+        elif v in ("none", "off", "-"): S_[k] = ""
+        else:
+            if len(v) > 16 or re.search(r"[\u0600-\u06FFA-Za-z0-9]", v): sys.exit("حط إيموجي وحد (مثل 🔥) أو none أو auto")
+            S_[k] = v
+        save(); print("الجملة %s: %s" % (args[1], {"auto": "تلقائي", "none": "بدون", "off": "بدون", "-": "بدون"}.get(v, v))); return
+    if sub in ("pos", "anim", "only", "size", "gap", "auto"):
+        if len(args) < 2: sys.exit("emoji <work> pos word|center · anim pop|bounce|float · only all|hot · size 40..200 · gap <ث> · auto yes|no")
+        v = args[1]
+        if sub in ("pos", "anim", "only"):
+            ok = {"pos": EMO_POS, "anim": EMO_ANIMS, "only": EMO_ONLY}[sub]
+            if v not in ok: sys.exit("القيم: " + " | ".join(ok))
+            E[sub] = v
+        elif sub == "auto": E["auto"] = v not in ("no", "false", "0", "off")
+        else:
+            try: f = float(v)
+            except ValueError: sys.exit("رقم")
+            E[sub] = int(max(40, min(200, f))) if sub == "size" else round(max(0.0, min(10.0, f)), 2)
+        save(); print("تم"); return
+    sys.exit("emoji: list | on | off | set <رقم> <إيموجي|none|auto> | clear | pos word|center | anim pop|bounce|float | size <40..200> | gap <ث> | only all|hot | auto yes|no")
 def vr_filters(mix):
     """4.11: مستوى صوت لأجزاء من كلامك (كتم أو خفض أو رفع) بزمن المقطع."""
     out = ""
@@ -2140,7 +2756,7 @@ def encode(work, S, log, out_final, out_master, mix):
     bm, bp = bleep_filters(bleep_of(hs_of(load_studio(work)))); a0 = "a0"; ain = "[%d:a]" % (3 if has_sfx else 2) if svf else "[1:a]"
     g_sfx, bg_lv = voice_guard(work, mix, log, svf or J(work, "cutz.mp4"))
     if svf: log("الصوت: " + {"ext": "اللي عالجته من برا", "dub": "الدبلجة", "local": "صوت استوديو"}.get(svm, "صوت استوديو"))
-    fc = "[0:v]scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=yuv420p[vo];%s%s%sapad=pad_dur=8[a0];" % (ain, chain, bm)
+    fc = "[0:v]scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[vo];%s%s%sapad=pad_dur=8[a0];" % (ain, chain, bm)
     if bp: fc += "%s[bp];[a0][bp]amix=inputs=2:duration=first:normalize=0[a0b];" % bp; a0 = "a0b"
     fc += ("[2:a]volume=%.4f[sx];[%s][sx]amix=inputs=2:duration=first:normalize=0[am];" % (g_sfx, a0) if has_sfx else "[%s]anull[am];" % a0)
     fc += "[am]atrim=0:%s,asetpts=PTS-STARTPTS,afade=t=out:st=%s:d=0.6[ao]" % (dur, fade)
@@ -2169,7 +2785,8 @@ def master_audio(work, src, out, log=print, gain=0.28, fade_in=1.0, fade_out=1.4
             fc = ("[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[v0][sc];"
                   "[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=%s,atrim=0:%s,asetpts=N/SR/TB,afade=t=in:st=0:d=%s,afade=t=out:st=%s:d=%s[m];"
                   "[m][sc]sidechaincompress=threshold=0.035:ratio=9:attack=8:release=320[md];[v0][md]amix=inputs=2:duration=first:normalize=0[a]") % (gain, dur, fi, fo, fo_d)
-            subprocess.run(["ffmpeg", "-v", "error", "-nostats", "-i", src, "-stream_loop", "-1", "-i", bg, "-filter_complex", fc, "-map", "[a]", "-ac", "2", "-ar", "48000", "-y", mix], check=True)
+            mf_ = music_fit_file(work)   # 4.45: الموسيقى المفصّلة على طول المقطع (بدون تكرار)
+            subprocess.run(["ffmpeg", "-v", "error", "-nostats", "-i", src] + (["-i", mf_] if mf_ else ["-stream_loop", "-1", "-i", bg]) + ["-filter_complex", fc, "-map", "[a]", "-ac", "2", "-ar", "48000", "-y", mix], check=True)
         else: subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "2", "-ar", "48000", "-y", mix], check=True)
         r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", mix, "-af", "loudnorm=I=%s:TP=-1.5:LRA=11:print_format=json" % lufs, "-f", "null", "-"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         ms = re.findall(r"\{[^{}]*input_i[^{}]*\}", r.stderr, re.S); M = json.loads(ms[-1]) if ms else None
@@ -2555,7 +3172,10 @@ def video_add(work, item, at=None, dur=4.0, start=None, fit=None, log=None):
     run(["ffmpeg", "-v", "error", "-ss", "%.2f" % st, "-t", "%.2f" % dur, "-i", src] + (["-filter_complex", vf] if mode == "fit" else ["-vf", vf]) + ["-q:v", "3", "-y", J(work, "broll", key + "_%04d.jpg")], log)
     n = len([f for f in os.listdir(J(work, "broll")) if f.startswith(key + "_")])
     if not n: raise RuntimeError("ما قدرت أقرأ المقطع")
-    stu = load_studio(work); stu.setdefault("brNeed", {})[key] = [1, n]; wj(J(work, "studio.json"), stu); add_broll_clip(work, key, at, n / 30.0)
+    stu = load_studio(work); stu.setdefault("brNeed", {})[key] = [1, n]; wj(J(work, "studio.json"), stu)
+    try: key_fit(work, key, refit=False)   # 4.39: المقطع مقصوص بوقته، فنكشف اللون بس
+    except Exception: pass
+    add_broll_clip(work, key, at, n / 30.0)
     cp = J(work, "assets", "credits.json"); os.makedirs(J(work, "assets"), exist_ok=True); cr = rj(cp, []) or []; cr.append({"file": "broll_src/" + key + ext, "title": item.get("title"), "author": item.get("author"), "license": item.get("lic"), "source": item.get("page")}); wj(cp, cr)
     return key, n
 def shot_add(work, url, at=None, dur=4.0, full=True, w=0.84, log=None):
@@ -2627,7 +3247,10 @@ def gen_import(work, rid, src, name=None, at=None, fit=None, log=print):
         run(["ffmpeg", "-v", "error", "-i", dst, "-vf", "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", "-q:v", "3", "-y", J(work, "broll", key + "_%04d.jpg")], log)
         n = len([f for f in os.listdir(J(work, "broll")) if f.startswith(key + "_")])
         if not n: raise RuntimeError("ما قدرت أقرأ المقطع")
-        st = load_studio(work); st.setdefault("brNeed", {})[key] = [1, n]; wj(J(work, "studio.json"), st); add_broll_clip(work, key, at); res = {"file": "broll_src/" + key + ext, "clip": key, "frames": n}
+        st = load_studio(work); st.setdefault("brNeed", {})[key] = [1, n]; wj(J(work, "studio.json"), st)
+        try: key_fit(work, key, log)   # 4.39: شاشة خضراء من التوليد تنشال لحالها
+        except Exception: pass
+        add_broll_clip(work, key, at); res = {"file": "broll_src/" + key + ext, "clip": key, "frames": n}
     else: raise RuntimeError("صيغة غير مدعومة: صور png/jpg/webp أو مقاطع mp4/mov/webm")
     if r:
         q = gen_list(work)
@@ -2638,7 +3261,90 @@ def gen_import(work, rid, src, name=None, at=None, fit=None, log=print):
 def gen_rm(work, rid): q = [x for x in gen_list(work) if str(x["id"]) != str(rid)]; wj(J(work, "gen.json"), q); return q
 def add_broll_clip(work, key, at=None, dur=None):
     st = load_studio(work); n = (st.get("brNeed") or {}).get(key, [1, 90])[1]; total = (rj(J(work, "caps.json"), {}) or {}).get("total", 0) or 600
-    s = max(0.0, min(float(at or 0), max(0, total - 0.5))); st.setdefault("brollClips", []).append({"k": key, "s": round(s, 3), "e": round(min(total, s + (float(dur) if dur else min(4, n / 30))), 3), "mode": "full"}); wj(J(work, "studio.json"), st)
+    s = max(0.0, min(float(at or 0), max(0, total - 0.5))); clip = {"k": key, "s": round(s, 3), "e": round(min(total, s + (float(dur) if dur else min(4, n / 30))), 3), "mode": "full"}
+    col = (st.get("brKey") or {}).get(key)
+    if col: clip["key"] = {**KEY_DEF, "on": True}   # 4.39: لقطة شاشة خضراء تنشال خلفيتها لحالها
+    st.setdefault("brollClips", []).append(clip); wj(J(work, "studio.json"), st)
+
+# ───────────────────────── 4.39: الشاشة الخضراء (Chroma key) ─────────────────────────
+KEY_DEF = {"color": "auto", "sim": 40, "soft": 12, "spill": 60}
+def key_guess_rgb(px, w, h):
+    """لون الخلفية من حواف الصورة (نفس قاعدة ext.js): 75% من الحواف لون واحد مشبّع أخضر أو أزرق، وإلا None."""
+    edge = []
+    for x in range(w):
+        for y in (0, 1, h - 1, h - 2): edge.append(px[y * w + x])
+    for y in range(2, h - 2):
+        for x in (0, 1, w - 1, w - 2): edge.append(px[y * w + x])
+    cand = [p for p in edge if max(p) > 60 and (max(p) - min(p)) > max(p) * 0.5 and (p[1] == max(p) or p[2] == max(p))]
+    gr = [p for p in cand if p[1] >= p[2]]; bl = [p for p in cand if p[2] > p[1]]; grp = gr if len(gr) >= len(bl) else bl
+    if len(grp) < len(edge) * 0.75: return None
+    med = lambda i: sorted(p[i] for p in grp)[len(grp) // 2]; m = (med(0), med(1), med(2))
+    cbcr = lambda r, g, b: (-0.168736 * r - 0.331264 * g + 0.5 * b, 0.5 * r - 0.418688 * g - 0.081312 * b); mb, mr = cbcr(*m)
+    if sum(1 for p in edge if math.hypot(cbcr(*p)[0] - mb, cbcr(*p)[1] - mr) < 25) < len(edge) * 0.75: return None
+    return "#%02X%02X%02X" % m
+def key_detect(img):
+    """يقرأ صورة (فريم) صغيرة بـffmpeg ويرجّع لون الشاشة الخضراء أو الزرقاء لو موجودة."""
+    w, h = 54, 96
+    try: raw = subprocess.run(["ffmpeg", "-v", "error", "-i", img, "-vf", "scale=%d:%d" % (w, h), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True, timeout=60).stdout
+    except Exception: return None
+    if len(raw) < w * h * 3: return None
+    return key_guess_rgb([tuple(raw[i:i + 3]) for i in range(0, w * h * 3, 3)], w, h)
+def key_fit(work, key, log=lambda *a: None, refit=True):
+    """لو لقطة البي-رول شاشة خضراء أو زرقاء: يحفظ لونها بـ studio.brKey، ولو مقاسها مو عمودي يعيد استخراجها كاملة
+    (بدون قص الأطراف) والفراغ بنفس لون الشاشة عشان ينشال معها. اللقطة العادية ما تنلمس. يرجّع اللون أو None."""
+    fr = sorted(glob.glob(J(work, "broll", key + "_*.jpg")))
+    if not fr: return None
+    col = key_detect(fr[0]) or (key_detect(fr[len(fr) // 2]) if len(fr) > 2 else None)
+    if not col: return None
+    src = next((p for p in sorted(glob.glob(J(work, "broll_src", key + "*"))) if os.path.splitext(p)[1].lower() in VID_EXT and "_sdr" not in p), None)
+    sdr = next(iter(glob.glob(J(work, "broll_src", key + "_sdr.*"))), None); src = sdr or src
+    if src and refit:
+        try:
+            wh = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", src], capture_output=True, text=True, timeout=60).stdout.strip().split(",")
+            ar = float(wh[0]) / float(wh[1])
+        except Exception: ar = 9 / 16
+        if abs(ar - 9 / 16) > 0.03:
+            tmp = J(work, "broll", ".fit-" + key); shutil.rmtree(tmp, ignore_errors=True); os.makedirs(tmp)
+            try:
+                run(["ffmpeg", "-v", "error", "-i", src, "-vf", "fps=30,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=0x%s" % col[1:], "-q:v", "3", "-y", J(tmp, key + "_%04d.jpg")], log)
+                new = sorted(os.listdir(tmp))
+                if new:
+                    for f in fr: os.remove(f)
+                    for f in new: shutil.move(J(tmp, f), J(work, "broll", f))
+                    st0 = load_studio(work); st0.setdefault("brNeed", {})[key] = [1, len(new)]; wj(J(work, "studio.json"), st0)
+            finally: shutil.rmtree(tmp, ignore_errors=True)
+    st = load_studio(work); st.setdefault("brKey", {})[key] = col; wj(J(work, "studio.json"), st); return col
+def cmd_key(work, args):
+    """hs key <work> list | <رقم اللقطة|all> [off] [color=auto|green|blue|#RRGGBB] [sim=0..100] [soft=0..100] [spill=0..100] [size=20..200] [x=±px] [y=±px] | detect <اسم اللقطة>"""
+    st = load_studio(work); B = st.get("brollClips") or []
+    if not args: sys.exit(cmd_key.__doc__)
+    if args[0] == "list":
+        for i, b in enumerate(B):
+            k = b.get("key") or {}; print("%2d  %-14s %6.2f-%-6.2f %-5s %s" % (i, b.get("k"), float(b.get("s", 0)), float(b.get("e", 0)), b.get("mode", "full"), ("شاشة خضراء %s تسامح %s" % (k.get("color", "auto"), k.get("sim", KEY_DEF["sim"]))) if k.get("on") else "عادي"))
+        if not B: print("ما فيه لقطات بي-رول بالمشروع.")
+        return
+    if args[0] == "detect":
+        if len(args) < 2: sys.exit(cmd_key.__doc__)
+        c = key_fit(work, args[1]); print(("شاشة لونها %s، صارت جاهزة تنشال" % c) if c else "ما هي شاشة خضراء ولا زرقاء"); return
+    idx = list(range(len(B))) if args[0] == "all" else None
+    if idx is None:
+        try: idx = [int(args[0])]; B[idx[0]]
+        except (ValueError, IndexError): sys.exit("رقم اللقطة غلط. شوف: hs key <work> list")
+    kv = parse_kv([a for a in args[1:] if "=" in a]); off = "off" in args[1:]
+    named = {"green": "#00B140", "blue": "#0047BB"}
+    for i in idx:
+        b = B[i]; k = {**KEY_DEF, **(b.get("key") or {}), "on": not off}
+        if "color" in kv:
+            c = str(kv["color"]); c = named.get(c, c)
+            if c != "auto" and not re.match(r"^#[0-9A-Fa-f]{6}$", c): sys.exit("اللون: auto أو green أو blue أو #RRGGBB")
+            k["color"] = c
+        for f in ("sim", "soft", "spill"):
+            if f in kv: k[f] = int(max(0, min(100, float(kv[f]))))
+        b["key"] = k
+        if "size" in kv: b["ks"] = int(max(20, min(200, float(kv["size"]))))
+        if "x" in kv: b["kx"] = int(max(-1080, min(1080, float(kv["x"]))))
+        if "y" in kv: b["ky"] = int(max(-1920, min(1920, float(kv["y"]))))
+    wj(J(work, "studio.json"), st); print("تم: %d لقطة %s" % (len(idx), "رجعت عادية" if off else "تنشال خلفيتها"))
 
 # ───────────────────────── إضافات تلقائية: تقريب عند الكلمات المميّزة · انتقال عند القصات ─────────────────────────
 def auto_layers(work, kind, on=True, opts=None):
@@ -3390,8 +4096,25 @@ def cmd_selftest(work=None, engine=None):
         chk("4.17: الموشن (رقم، عنوان، قائمة، مراحل، اقتباس، دائرة، مقارنة، شعار) والتعليقات والتوهج تاخذ لون الطابع، ولون الحساب لو ما فيه طابع",
             "accent" not in hs1["layers"][0] and hs1["layers"][1]["accent"] == "#123456" and hs1["cardDefault"]["accent"] == "#F4C55A" and "look" not in hs2
             and "const lookAcc=()=>(HSX.look&&HSX.cardDefault&&HSX.cardDefault.accent)" in ex and ex.count("acc=L.accent||lookAcc()") >= 8 and "col=L.color||lookAcc()" in ex
-            and "function lookAccOf(h)" in ap and "{type:'mg',kind:arg,track:1,...JSON.parse(JSON.stringify(MGDEF[arg]||{}))});" in ap)
+            and "function lookAccOf(h)" in ap and "{type:'mg',kind:arg,track:1,...(DF('mg',arg)||{})});" in ap)
     except Exception as e: chk("4.17: الموشن ياخذ لون الطابع", False, str(e)[:240])
+    try:   # 4.40: الواجهة كاملة بالإنجليزي
+        i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read()
+        hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); rv_ = open(os.path.join(HERE, "review.html"), encoding="utf-8").read()
+        ok_ = all(x in i18_ for x in ("const SRV_EN=[", "function srvEn(s)", "function langCookie()")) and all(x in ap_ for x in ("function DF(tab,k)", "srvEn(r.msg)", "srvEn(e.text)", "langCookie();"))
+        ok_ = ok_ and '<script src="/hub/i18n.js"></script>' in hb_ and "srvEn(p.sub)" in hb_ and "const TX={" in rv_ and "data-r=" in rv_ and "Enter the sign-in code" in login_html("/library", "x") and "The studio stopped" in stopped_html()
+        UI_LANG[0] = "en"; hint_ = "in English" in lang_hint("x"); UI_LANG[0] = "ar"; ok_ = ok_ and hint_ and lang_hint("x") == "x"
+        miss_ = []
+        if shutil.which("node"):   # كل رسالة ثابتة يرجعها السيرفر لها ترجمة
+            msgs_ = sorted(set(m for m in re.findall(r'"msg": "([^"%]*[\u0600-\u06FF][^"%]*)"(?!\s*[+%])', open(os.path.abspath(__file__), encoding="utf-8").read()) if not m.endswith(": ")))
+            js_ = i18_ + "\nconst LANG='en';\nconst M=" + json.dumps(msgs_, ensure_ascii=False) + ";\nconsole.log(JSON.stringify(M.filter(m=>srvEn(m)===m)));"
+            with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f_: f_.write(js_.replace("const I18N={", "var I18N={", 1))
+            try:
+                r_ = subprocess.run(["node", f_.name], capture_output=True, text=True, encoding="utf-8", timeout=30); miss_ = json.loads(r_.stdout or "[]") if r_.returncode == 0 else ["(node: %s)" % (r_.stderr or "")[-120:]]
+            finally: os.unlink(f_.name)
+        chk("4.40: الواجهة بالإنجليزي: رسائل السيرفر، نصوص العناصر الجديدة، صفحة المراجعة، صفحة الدخول، وClaude يكتب بلغة الواجهة", ok_ and not [m for m in miss_ if m.startswith("(node")], "، ".join(miss_[:3]))
+        if miss_: print("ملاحظة: رسائل سيرفر بدون ترجمة إنجليزية (أضفها في SRV_EN بـ i18n.js): " + " · ".join(miss_[:8]))
+    except Exception as e: chk("4.40: الواجهة بالإنجليزي", False, str(e)[:240])
     try:   # 4.17: ألوان كلود بالاستوديو والمكتبة
         sh_ = open(os.path.join(HERE, "studio.html"), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read()
         lastroot = lambda s: s[s.rindex(":root{"):].split("}")[0]
@@ -3500,6 +4223,75 @@ def cmd_selftest(work=None, engine=None):
             and ci is True and r_["total"] < 2 and okc and vmc and abs(dc - r_["total"]) < 0.12 and okc2 and vmc2 is None
             and '"-crf", "18"' in open(os.path.abspath(__file__), encoding="utf-8").read() and "function qualitySec(h)" in open(os.path.join(HERE, "app.js"), encoding="utf-8").read())
     except Exception as e: chk("4.25: تحسين الجودة والقص بدون cut.json", False, str(e)[:240])
+    try:   # 4.40: تثبيت الصورة: يفحص الاهتزاز، يصفّر قفزة القص، يثبّت، والمطفي نفس القديم بالضبط
+        td = tempfile.mkdtemp(prefix="hs-st-")
+        try:
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "mandelbrot=s=640x1136:r=30:start_scale=0.5:end_scale=0.5,trim=duration=3", "-vf", "crop=540:960:'50+22*sin(t*9.1)+10*sin(t*21)+if(gte(t,1.5),20,0)':'88+24*sin(t*7.7+1)+9*sin(t*19)'",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-y", os.path.join(td, "cutz.mp4")], check=True)
+            wj(os.path.join(td, "caps.json"), {"total": 3, "cards": [{"s": 0, "e": 3, "w": [{"t": "x", "s": 0.1, "e": 0.5}]}]}); wj(os.path.join(td, "studio.json"), {})
+            os.makedirs(os.path.join(td, ".hs")); wj(os.path.join(td, ".hs", "media.json"), {"keep": [[0.0, 1.5], [2.0, 3.5]]})
+            vfr_extract(td, lambda *a: None); f0 = open(os.path.join(td, "vfr", "00031.jpg"), "rb").read()
+            subprocess.run(["ffmpeg", "-v", "error", "-i", "cutz.mp4", "-vf", "fps=30", "-q:v", "2", "-y", os.path.join(".hs", "%05d.jpg")], check=True, cwd=td); same = f0 == open(os.path.join(td, ".hs", "00031.jpg"), "rb").read()
+            hv = stab_has(); I = stab_analyze(td, lambda *a: None) if hv else {"level": "strong", "jitter": 9.9}
+            seam0 = ""
+            if hv: seam0 = next(("Frame %d (List %d [])" % (n_, len(L_)) for n_, L_ in _trf_read(os.path.join(td, ".hs", "stab.trf"))[1] if n_ == 46), "")   # الملف نص أو ثنائي حسب ffmpeg
+            st_ = load_studio(td); hs_of(st_)["stab"] = {"level": "strong"}; wj(os.path.join(td, "studio.json"), st_); vfr_extract(td, lambda *a: None)
+            ns = len([f for f in os.listdir(os.path.join(td, "vfr")) if f.endswith(".jpg")])
+            import struct; jb = open(os.path.join(td, "vfr", "00001.jpg"), "rb").read(); i_ = jb.find(b"\xff\xc0"); jh, jw = struct.unpack(">HH", jb[i_ + 5:i_ + 9]) if i_ > 0 else (0, 0)
+            j2 = None
+            if hv:
+                subprocess.run(["ffmpeg", "-v", "error", "-framerate", "30", "-i", os.path.join("vfr", "%05d.jpg"), "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", "-y", "cutz.mp4"], check=True, cwd=td)
+                j2 = stab_analyze(td, lambda *a: None, True)["jitter"]
+            ck = check(td); hs_of(st_)["stab"] = {"level": "off"}; wj(os.path.join(td, "studio.json"), st_)
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = all(x in ap_ for x in ("function stabSec(h)", "o+=stabSec(h);", "o+=stabChk(c);", "/hs/stab_preview?t=", "api('/hs/stab',{level:lv})")) and all(("%s:[" % k) in i18_ for k in ("stbTitle", "stbShake_ok", "stbShake_light", "stbShake_strong", "stbFix_light", "stbFix_strong", "stbHint", "stbHintNo", "stbWorking", "stbDone"))
+        ui_ = ui_ and all(x in me_ for x in ('if p == "/hs/stab":', 'if p == "/hs/stab_check":', 'if p == "/hs/stab_preview":', 'elif cmd == "stab":'))
+        chk("4.40: تثبيت الصورة: يكشف الاهتزاز، قفزة القص ما تنحسب، الفريمات تتثبّت بنفس العدد والمقاس، والمطفي نفس القديم" + ("" if hv else " (ffmpeg بدون vid.stab: deshake)"),
+            same and stab_filter(None, "off") == "" and I["level"] != "ok" and I["jitter"] > STAB_OK and ns == 90 and (jw, jh) == (540, 960) and ui_ and "shake" in ck
+            and (not hv or ("(List 0 [])" in seam0 and j2 is not None and j2 < I["jitter"] * 0.6)), "jitter %.1f ← %s · seam %s" % (I["jitter"], j2, seam0[:30]))
+    except Exception as e: chk("4.40: تثبيت الصورة", False, str(e)[:240])
+    try:   # 4.41: ألوان الآيفون (HDR): يكتشف HLG، الفريمات الباهتة تنكشف بالفحص، التصليح يرجّع الألوان قريبة من الأصل، والمطفي والعادي نفس القديم بالضبط
+        td = tempfile.mkdtemp(prefix="hs-hdr-")
+        try:
+            def _fwd_cube(n=17):   # عكس المعيار: SDR ← HLG (نصنع مقطع HDR تجريبي بدون أي مكتبة)
+                M2 = ((0.6274, 0.3293, 0.0433), (0.0691, 0.9195, 0.0114), (0.0164, 0.0880, 0.8956)); a, b, c = 0.17883277, 0.28466892, 0.55991073; L_ = ["LUT_3D_SIZE %d" % n]
+                for bi in range(n):
+                    for gi in range(n):
+                        for ri in range(n):
+                            v = [(x / (n - 1.0)) ** 2.4 * 0.203 for x in (ri, gi, bi)]; v = [max(0.0, M2[i][0] * v[0] + M2[i][1] * v[1] + M2[i][2] * v[2]) for i in range(3)]
+                            Y = max(1e-9, 0.2627 * v[0] + 0.6780 * v[1] + 0.0593 * v[2]); E = [min(1.0, x * Y ** (-0.2 / 1.2)) for x in v]
+                            L_.append("%.5f %.5f %.5f" % tuple((3 * x) ** 0.5 if x <= 1 / 12.0 else a * math.log(max(1e-9, 12 * x - b)) + c for x in E))
+                return "\n".join(L_) + "\n"
+            open(os.path.join(td, "fwd.cube"), "w").write(_fwd_cube())
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=540x960:d=2:r=30", "-pix_fmt", "rgb24", "-frames:v", "1", "-y", "ref.png"], check=True, cwd=td)
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=540x960:d=2:r=30", "-f", "lavfi", "-i", "sine=d=2", "-vf", "format=rgb24,lut3d=file=fwd.cube,scale=out_color_matrix=bt2020:out_range=tv,format=yuv420p,setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc:range=tv",
+                            "-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc", "-c:v", "libx264", "-crf", "12", "-c:a", "aac", "-shortest", "-y", "src.mov"], check=True, cwd=td)
+            subprocess.run(["ffmpeg", "-v", "error", "-i", "src.mov", "-vf", "fps=30,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,format=yuv420p", "-c:v", "libx264", "-crf", "12", "-c:a", "copy", "-y", "cutz.mp4"], check=True, cwd=td)   # نفس 03_cut_zoom بدون محوّل أبل
+            wj(os.path.join(td, "caps.json"), {"total": 2, "cards": [{"s": 0, "e": 2, "w": [{"t": "x", "s": 0.1, "e": 0.5}]}]}); wj(os.path.join(td, "studio.json"), {}); os.makedirs(os.path.join(td, ".hs"), exist_ok=True)
+            os.makedirs(os.path.join(td, "vfr")); subprocess.run(["ffmpeg", "-v", "error", "-i", "cutz.mp4", "-vf", "fps=30", "-q:v", "2", "-y", os.path.join("vfr", "%05d.jpg")], check=True, cwd=td)   # الفريمات بطريقة MONTAGE.md (قبل التصليح)
+            def _psnr(f):
+                r = subprocess.run(["ffmpeg", "-hide_banner", "-i", f, "-i", "ref.png", "-lavfi", "[0]format=rgb24[a];[1]format=rgb24[b];[a][b]psnr", "-f", "null", "-"], capture_output=True, text=True, cwd=td).stderr
+                m = re.search(r"average:([\d.]+|inf)", r); return float(m.group(1)) if m else 0.0
+            I0 = hdr_info(td); ck0 = check(td); p_old = _psnr(os.path.join("vfr", "00001.jpg"))
+            plain = open(os.path.join(td, "vfr", "00001.jpg"), "rb").read()
+            st_ = load_studio(td); hs_of(st_)["hdr"] = {"level": "off"}; wj(os.path.join(td, "studio.json"), st_); vfr_extract(td, lambda *a: None)
+            off_same = open(os.path.join(td, "vfr", "00001.jpg"), "rb").read() == plain and hdr_filter(td) == "" and not hdr_info(td)["washed"]
+            hs_of(st_)["hdr"] = {"level": "auto"}; wj(os.path.join(td, "studio.json"), st_); vfr_extract(td, lambda *a: None)
+            p_new = _psnr(os.path.join("vfr", "00001.jpg")); I1 = hdr_info(td); ck1 = check(td); nf = len([f for f in os.listdir(os.path.join(td, "vfr")) if f.endswith(".jpg")])
+            os.makedirs(os.path.join(td, "broll_src")); os.makedirs(os.path.join(td, "broll")); shutil.copy(os.path.join(td, "src.mov"), os.path.join(td, "broll_src", "k1.mov")); open(os.path.join(td, "broll", "k1_0001.jpg"), "wb").write(plain)
+            bk = broll_hdr_fix(td, "k1", lambda *a: None); nb = len(glob.glob(os.path.join(td, "broll", "k1_*.jpg")))
+            sd = os.path.join(td, "sdr"); os.makedirs(sd); shutil.copy(os.path.join(td, "ref.png"), os.path.join(sd, "x.png"))
+            subprocess.run(["ffmpeg", "-v", "error", "-loop", "1", "-i", "x.png", "-t", "1", "-r", "30", "-pix_fmt", "yuv420p", "-y", "cutz.mp4"], check=True, cwd=sd); sdr_ok = hdr_info(sd)["kind"] is None and hdr_filter(sd) == ""
+            pq = hdr_cube("pq", 9).split("\n"); grey = [float(pq[2 + i * (81 + 9 + 1)].split()[0]) for i in range(9)]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = all(x in ap_ for x in ("function hdrSec(h)", "o+=hdrSec(h);", "o+=hdrChk(c);", "/hs/hdr_preview?t=", "api('/hs/hdr',{level:lv})")) and all(("%s:[" % k) in i18_ for k in ("hdrTitle", "hdrWashed", "hdrFixed", "hdrOff", "hdrSdr", "hdrFix", "hdrAuto", "hdrOn", "hdrHint", "hdrWorking", "hdrDone"))
+        ui_ = ui_ and all(x in me_ for x in ('if p == "/hs/hdr":', 'if p == "/hs/hdr_info":', 'if p == "/hs/hdr_preview":', 'elif cmd == "hdr":', "broll_hdr_fix(work, d_["))
+        chk("4.41: ألوان الآيفون (HDR): يكتشف HLG، الباهت يطلع بالفحص، التصليح يرجّع الألوان، والمطفي والعادي نفس القديم",
+            I0["kind"] == "hlg" and I0["washed"] and (ck0.get("hdr") or {}).get("washed") and off_same and I1["applied"] == "hlg" and not I1["washed"] and not (ck1.get("hdr") or {}).get("washed")
+            and nf == 60 and p_new > p_old + 6 and p_new > 20 and bk == "hlg" and nb > 1 and sdr_ok and all(x <= y for x, y in zip(grey, grey[1:])) and grey[0] < grey[3] < grey[5] and ui_, "PSNR %.1f ← %.1f · broll %s/%d · ui %s" % (p_old, p_new, bk, nb, ui_))
+    except Exception as e: chk("4.41: ألوان الآيفون (HDR)", False, str(e)[:240])
     try:   # 4.26: بودكاست (النص أول من الترجمة، ضعف المرشّحات، «هات غيرها») + الدبلجة بالسكتات
         td = tempfile.mkdtemp(prefix="hs-pod-")
         try:
@@ -3634,11 +4426,53 @@ def cmd_selftest(work=None, engine=None):
                and "/hs/identity_file" in ap_ and "data-nid" in hb_ and "['motion',IC.spark" in hb_ and 'stl == "motion"' in open(os.path.abspath(__file__), encoding="utf-8").read())
         chk("4.37: Motion Graphics أساسي (16 مجلد، %d تقنية، 10 قوالب كاملة) والهوية المحفوظة تنطبق على المونتاج والموشن والبودكاست" % len(cat), oki and okc and okm and oku, "هوية=%s فحص=%s مرجع=%s واجهة=%s" % (oki, okc, okm, oku))
     except Exception as e: chk("4.37", False, str(e)[:240])
+    try:   # 4.39: شيل الشاشة الخضراء (Chroma key)
+        sq = lambda c, inner=None: [inner if (inner and 12 < (i % 54) < 42 and 25 < (i // 54) < 70) else c for i in range(54 * 96)]
+        g1 = key_guess_rgb(sq((0, 177, 64), (232, 64, 42)), 54, 96); b1 = key_guess_rgb(sq((16, 64, 200), (250, 220, 0)), 54, 96)
+        sky = key_guess_rgb([(135, 206, 235) if (i // 54) < 48 else (90, 80, 70) for i in range(54 * 96)], 54, 96); skin = key_guess_rgb(sq((200, 160, 130)), 54, 96)
+        okg = g1 == "#00B140" and b1 == "#1040C8" and sky is None and skin is None
+        td = tempfile.mkdtemp(prefix="hs-key-")
+        try:
+            os.makedirs(J(td, "broll")); os.makedirs(J(td, "broll_src")); wj(J(td, "caps.json"), {"cards": [], "total": 10})
+            src_ = J(td, "broll_src", "gsx.mp4")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x00B140:s=640x360:d=1:r=30", "-vf", "drawbox=x=250:y=110:w=140:h=140:color=0xE8402A@1:t=fill", "-pix_fmt", "yuv420p", src_], capture_output=True, timeout=120)
+            subprocess.run(["ffmpeg", "-v", "error", "-i", src_, "-vf", "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", "-q:v", "3", "-y", J(td, "broll", "gsx_%04d.jpg")], capture_output=True, timeout=120)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x806040:s=1080x1920:d=1:r=30", "-frames:v", "3", "-q:v", "3", J(td, "broll", "nat_%04d.jpg")], capture_output=True, timeout=120)
+            wj(J(td, "studio.json"), {"brNeed": {"gsx": [1, 30], "nat": [1, 3]}})
+            col = key_fit(td, "gsx"); coln = key_fit(td, "nat"); add_broll_clip(td, "gsx", 1); add_broll_clip(td, "nat", 4)
+            st_ = load_studio(td); B_ = st_["brollClips"]
+            okf = (bool(col) and coln is None and B_[0].get("key", {}).get("on") and "key" not in B_[1] and st_["brNeed"]["gsx"] == [1, 30] and len(glob.glob(J(td, "broll", "gsx_*.jpg"))) == 30
+                   and key_detect(J(td, "broll", "gsx_0001.jpg")) is not None)
+            import contextlib, io
+            er_ = []
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_key(td, ["1", "color=blue", "sim=55", "size=80", "y=-200"]); cmd_key(td, ["0", "off"])
+                for bad_ in (["0", "color=pink"], ["9"]):
+                    try: cmd_key(td, bad_)
+                    except SystemExit as e: er_.append(str(e))
+            B_ = load_studio(td)["brollClips"]
+            okc = (B_[1]["key"] == {**KEY_DEF, "on": True, "color": "#0047BB", "sim": 55} and B_[1]["ks"] == 80 and B_[1]["ky"] == -200 and B_[0]["key"]["on"] is False and len(er_) == 2)
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read()
+        jsk = None; m_ = re.search(r"/\*KEYCORE\{\*/(.*?)/\*\}KEYCORE\*/", ex_, re.S)
+        if m_ and shutil.which("node"):
+            r_ = subprocess.run(["node", "-e", m_.group(1) + """
+const w=54,h=96,d=new Uint8ClampedArray(w*h*4); for(let y=0;y<h;y++)for(let x=0;x<w;x++){ const i=(y*w+x)*4; let c=[0,177,64]; if(x>15&&x<40&&y>30&&y<70) c=[232,64,42]; if(x>18&&x<36&&y>75&&y<85) c=[20,20,20]; if(x===15&&y>30&&y<70) c=[120,150,60]; d[i]=c[0];d[i+1]=c[1];d[i+2]=c[2];d[i+3]=255; }
+const col=keyGuessData(d,w,h); keyProcess(d,{color:col,sim:40,soft:12,spill:60}); const A=(x,y)=>d[(y*w+x)*4+3];
+const sky=new Uint8ClampedArray(w*h*4); for(let i=0;i<sky.length;i+=4){ const top=(i/4/w)<48; sky[i]=top?135:90; sky[i+1]=top?206:80; sky[i+2]=top?235:70; sky[i+3]=255; }
+console.log(JSON.stringify({col,bg:A(2,2),red:A(25,50),black:A(25,80),edgeG:d[(50*w+15)*4+1],sky:keyGuessData(sky,w,h)}));"""], capture_output=True, text=True, timeout=60)
+            if r_.returncode == 0: jsk = json.loads(r_.stdout.strip())
+        okj = jsk is not None and jsk["col"] == "#00B140" and jsk["bg"] == 0 and jsk["red"] == 255 and jsk["black"] == 255 and jsk["edgeG"] < 150 and jsk["sky"] is None
+        chk("4.39: شيل الشاشة الخضراء والزرقاء من البي-رول (يكتشفها لحاله، يحفظ اللقطة كاملة، تسامح ونعومة وتنظيف الأطراف، حجم ومكان)، وبدونه نفس الرسم القديم",
+            okg and okf and okc and okj and "function keyClip" in ex_ and "b.key&&b.key.on" in ex_ and "window.hsKeyGuess" in ex_ and "function keyPanel" in ap_ and "brKeyFound" in ap_
+            and all(("%s:" % k) in i18_ for k in ("brKey", "brKeyOn", "brKeyCol", "brKeySim", "brKeySoft", "brKeySpill", "brKeySize", "brKeyHint", "brKeyFound")) and "hs key" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read(),
+            "guess=%s fit=%s cli=%s js=%s" % (okg, okf, okc, jsk))
+    except Exception as e: chk("4.39: الشاشة الخضراء", False, str(e)[:240])
     try:   # 4.26: حارس: ولا متغيّر داخل السيرفر يغطّي D (مجلد الكاش) أو P أو S، كان يخلّي الفريمات والصور المصغّرة ما تطلع
         me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
         bad_ = [l.strip()[:60] for l in me_.split(chr(10)) if re.match(r"^ {16,}(D|P|S|base|work) = ", l)]
         chk("4.26: السيرفر ما يغطّي متغيّراته (الفريمات تطلع)، ونافذة المشروع ما ترجّعك فوق، وقسم «بودكاست» بالمكتبة",
-            not bad_ and "الاختيار ما يرجّعك فوق" in hb_ and "#hostName{background:var(--s1)" in hb_ and "'all','wait','work','ready','pod'" in hb_ and '"pod": bool((hs.get("pod") or {}).get("on"))' in me_, "; ".join(bad_))
+            not bad_ and "الاختيار ما يرجّعك فوق" in hb_ and ("#hostName{background:var(--s1)" in hb_ or "#hostName,#nSpk{background:var(--s1)" in hb_) and "'all','wait','work','ready','pod'" in hb_ and '"pod": bool((hs.get("pod") or {}).get("on"))' in me_, "; ".join(bad_))
     except Exception as e: chk("4.26: حارس متغيّرات السيرفر", False, str(e)[:240])
     try:   # 4.21: خروج الكابشن (cap.exit)، والافتراضي يطلع نفس القديم
         ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read()
@@ -3679,6 +4513,137 @@ def cmd_selftest(work=None, engine=None):
         chk("4.6: كتم الكلمات (يلقى الكلمة، يكتم الصوت، نجوم بالنص، وبدونها ما يتغيّر شي)", m0 == "" and p0 is None and len(hits) == 2 and "between(t,0.070,0.430)" in m1 and p1 and "sine=frequency=1000" in p1 and p2 is None
             and tx.split()[0] == "ش***" and tx.split()[2] == "شركات" and n1 == 2 and n2 == 0 and "function blMask" in txt.get("ext.js", "") and "function bleepPreview" in txt.get("app.js", "") and "blTitle:" in open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read())
     except Exception as e: chk("4.6: كتم الكلمات", False, str(e)[:120])
+    try:   # 4.43: نافذة الألوان (LUT وLog)، القص ما يشيل الكلام الواطي، مراجعة الكابشن، والخطوات
+        td = tempfile.mkdtemp(prefix="hs-col-")
+        try:
+            cube = "LUT_3D_SIZE 3\n" + "\n".join("%g %g %g" % (r / 2, g / 2, b / 2) for b in range(3) for g in range(3) for r in range(3)) + "\n"
+            ok_cube = lut_check(cube) == 3 and lut_check("LUT_3D_SIZE 3\n0 0 0\n") == 0 and lut_safe("../x/My LUT.cube") == "My LUT"
+            os.makedirs(J(td, ".hs")); f_none = color_filter(td); wj(J(td, ".hs", "color.json"), {"log": True}); f_log = color_filter(td)
+            open(J(td, ".hs", "user.cube"), "w", encoding="utf-8").write(cube); wj(J(td, ".hs", "color.json"), {"log": True, "lut": "x"}); f_lut = color_filter(td)
+            wj(J(td, "caps.json"), {"total": 2, "cards": [{"s": 0, "e": 2, "w": [{"t": "من", "s": 0, "e": 0.4}, {"t": "شاد", "s": 0.4, "e": 0.8}, {"t": "جي", "s": 0.8, "e": 1.2}, {"t": "بي", "s": 1.2, "e": 1.6}, {"t": "تي", "s": 1.6, "e": 2}]}]})
+            r1 = capr_replace(td, 1, "شاد جي بي تي", "ChatGPT", learn=False); w1 = [w["t"] for w in rj(J(td, "caps.json"))["cards"][0]["w"]]
+            r2 = capr_replace(td, 1, "شاد", "x", learn=False); r3 = capr_replace(td, 1, "Chat", "x", learn=False)
+            wj(capr_path(td), {"summary": "s", "fixes": [{"id": "f1", "card": 1, "from": "من", "to": "مِن", "why": ""}, {"card": 9, "from": "a", "to": "b"}], "asks": [{"id": "q1", "cards": [1], "from": "ChatGPT", "q": "؟", "opts": ["ChatGPT", "Chat"]}]})
+            rv = capr_load(td); rv2 = capr_act(td, "apply", ["f1"], learn=False); w2 = [w["t"] for w in rj(J(td, "caps.json"))["cards"][0]["w"]]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read()
+        cp_ = open(os.path.join(find_engine(None) or "", "scripts", "01_cut_plan.py"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        chk("4.43: الألوان بنافذة المقطع الجديد (LUT وLog)، شاشة التجهيز، القص ما يشيل الكلام الواطي، والخطوات: الجمل ثم الصوت ثم الكابشن مع المساعد ثم الخطة بصورها",
+            ok_cube and f_none == "" and f_log == LOG_VF and f_lut.startswith("lut3d=file=.hs/user.cube") and r1 and w1 == ["من", "ChatGPT"] and not r2 and not r3
+            and rv and len(rv["fixes"]) == 1 and len(rv["asks"]) == 1 and rv2["fixes"][0]["done"] is True and w2 == ["مِن", "ChatGPT"]
+            and PREP_STEPS[0] == "transcribe" and '_rj("a.json")' in cp_ and "FLOOR + 4.0" in cp_ and "cch = color_filter(work)" in me_ and 'hs_of(st)["guide"] = 1' in me_
+            and all(x in hb_ for x in ("function colHtml()", "function cubeApply(", "function prepPoll()", "/hub/api/lut?")) and all(x in ap_ for x in ("function cutFx()", "function guideSync()", "function audioStep()", "function caprHtml(", "function planBoard(")),
+            "lut %s · log %s · capr %s/%s" % (ok_cube, bool(f_log), r1, bool(rv)))
+    except Exception as e: chk("4.43: الألوان والخطوات", False, str(e)[:240])
+    try:   # 4.44: كرت Claude ما يعلق، مجلدات، أدوات الصورة، وما فيه دالتين بنفس الاسم بالواجهة
+        alive_me = pid_alive(os.getpid()); dead = pid_alive(999999)
+        td = tempfile.mkdtemp(prefix="hs-44-")
+        try:
+            wj(os.path.join(td, ".hs", "job.json") if os.makedirs(os.path.join(td, ".hs")) is None else "", {"stage": "claude", "done": True, "cpid": 999999})
+            stale_dead = claude_stale(td); wj(os.path.join(td, ".hs", "job.json"), {"stage": "claude", "done": True, "cpid": os.getpid()}); stale_live = claude_stale(td)
+            ch0 = fix_filter(td, {}, 1080, 1920)
+            ch1 = fix_filter(td, {"warp": {"g": {"s": -0.8}, "x": {"h": 9}}, "skin": "light", "erase": [{"x": 0.9, "y": 0.1, "w": 0.5, "h": 0.1}, {"x": 0.1, "y": 0.1, "w": 0.001, "h": 0.1}]}, 1080, 1920)
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read()
+        nm_ = re.findall(r"^(?:async )?function (\w+)\(", ap_, re.M); dup_ = sorted({n for n in nm_ if nm_.count(n) > 1})
+        chk("4.44: كرت «Claude شغّال» ينتهي لما يخلص، مجلدات المكتبة، الصوت يتغيّر فعلاً، الملاحظات محادثة، وأدوات احترافية (إضاءة موضعية، تلوين دقيق، تنعيم، إزالة عنصر، القطعات، تتبع الوجه)",
+            alive_me and not dead and stale_dead and not stale_live and ch0 == "" and "huesaturation=hue=0.0:saturation=-0.800" in ch1 and "colors=g" in ch1 and "colors=x" not in ch1
+            and "bilateral" in ch1 and "delogo=x=972:y=192:w=106" in ch1 and ch1.count("delogo") == 1 and not dup_
+            and all(x in ap_ for x in ("function auStepClick(", "function chatHtml(", "function proSec(", "function lthumb(", "function covCtl(", "clean=1&")) and "svHear" not in ap_ and "rpThread" not in ap_
+            and all(x in hb_ for x in ("function foldRow(", "function epPop(")) and all(x in ex_ for x in ("function winPass(", "function lyFace(", "track!=='face'")),
+            "dup %s · chain %s" % (dup_, ch1[:60]))
+    except Exception as e: chk("4.44", False, str(e)[:240])
+    try:   # 4.45: حركة بطيئة، تفصيل الموسيقى، منحنى السرعة، ربط الطبقات، ضبابية الحركة
+        td = tempfile.mkdtemp(prefix="hs-45-")
+        try:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "aevalsrc='0.6*sin(2*PI*60*t)*exp(-30*mod(t,0.5))+0.15*sin(2*PI*(if(gt(t,24),660,440))*t)':s=44100:d=30", os.path.join(td, "bg-audio.wav")], check=True)
+            wj(os.path.join(td, "caps.json"), {"total": 21.7, "cards": []}); wj(os.path.join(td, "studio.json"), {})
+            r1 = music_fit(td, log=lambda *a: None); ok1 = abs(r1["dur"] - 21.7) < 0.05 and abs(r1["beat"] - 0.5) < 0.06 and bool(music_fit_file(td))
+            wj(os.path.join(td, "caps.json"), {"total": 40.0, "cards": []}); stale = music_fit_file(td) is None
+            r2 = music_fit(td, log=lambda *a: None); ok2 = abs(r2["dur"] - 40.0) < 0.05 and r2["parts"] >= 2
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=540x960:d=4:r=30", "-c:v", "libx264", "-pix_fmt", "yuv420p", os.path.join(td, "cutz.mp4")], check=True)
+            wj(os.path.join(td, "caps.json"), {"total": 4, "cards": []})
+            sm = slowmo_make(td, 1.0, 2.0, 0.5, True, lambda *a: None); st_ = load_studio(td); bc = (st_.get("brollClips") or [{}])[-1]; vr = (hs_of(st_).get("mix") or {}).get("vr") or []
+            ok3 = sm["frames"] == 30 and bc.get("slow") == 0.5 and abs(bc.get("e", 0) - 2.0) < 0.05 and vr == [{"s": 1.0, "e": 2.0, "g": 0}]
+            try: slowmo_make(td, 1.0, 1.1, 0.5); bad_ok = False
+            except ValueError: bad_ok = True
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read()
+        chk("4.45: حركة بطيئة بفريمات بينية، تفصيل الموسيقى على طول المقطع، منحنى السرعة، ربط الطبقات، وضبابية الحركة",
+            ok1 and stale and ok2 and ok3 and bad_ok and all(x in ex_ for x in ("function bezE(", "function lyParent(", "function lyMoving(", "a.e==='curve'")) and all(x in ap_ for x in ("function curveEd(", "function slowOpen(", "'L.mblur'", "'L.parent'", "mfitGo")),
+            "fit %s/%s · slow %s" % (ok1, ok2, ok3))
+    except Exception as e: chk("4.45", False, str(e)[:240])
+    try:   # 4.46: كل سكربتات المتصفح تلقى مكتبة التصدير بـ ~/.hojas-studio، نوافذ من الموقع، زر الرجوع، التحميل فوق المعاينة بس
+        eng_ = os.path.join(find_engine(None) or "", "scripts"); miss_ = []
+        for f_ in ("04_render_frames.js", "08_safe_check.js", "13_collage.js", "16_render_pod.js", "20_shot.js", "21_vision.js", "23_rmbg.js"):
+            if ".hojas-studio" not in open(os.path.join(eng_, f_), encoding="utf-8").read(): miss_.append(f_)
+        hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); sh_ = open(os.path.join(HERE, "studio.html"), encoding="utf-8").read()
+        chk("4.46: إضافة موقع وقص الشخص ومكان الوجه يلقون مكتبة التصدير، نوافذ الموقع بدل المتصفح، زر الرجوع ما يخرّب المقطع، التحميل فوق المعاينة، والطبقة الجديدة تدخل بحركة",
+            not miss_ and "prompt(" not in hb_ and "confirm(" not in hb_ and "confirm(" not in ap_ and "function askBox(" in hb_ and "addEventListener('popstate'" in ap_ and "e.persisted" in ap_
+            and "function bootScope(" in ap_ and "function workBadge(" in ap_ and "function freshMark(" in ap_ and "function ghostAdd(" in ap_ and ".auopt{white-space:normal}" in sh_ and ".stp.cur{" in sh_,
+            "ناقص: " + "، ".join(miss_))
+    except Exception as e: chk("4.46", False, str(e)[:240])
+    try:   # 4.47: نص البودكاست بدون &gt;&gt;، اسم المتكلم لكل حلقة، Claude يدرس الحلقة، البناء بـClaude، وخط Marhey انشال
+        td = tempfile.mkdtemp(prefix="hs-47-")
+        try:
+            ep = os.path.join(td, "long-x"); os.makedirs(ep); wj(os.path.join(ep, "clips.json"), {"title": "حلقة | ياسر الحزيمي", "cands": [], "clips": [{"name": "clip-1"}]})
+            pod_want(ep, {"mode": "clips", "tr": "ar", "speaker": " سعيد  الزهراني ", "study": "1"}); W_ = clips_cfg(ep).get("want") or {}
+            cw = os.path.join(ep, "clip-1"); os.makedirs(cw); wj(os.path.join(cw, "caps.json"), {"total": 30, "cards": [{"s": 0, "e": 1, "w": [{"t": "x", "s": 0, "e": 1}]}]}); wj(os.path.join(cw, "cut.json"), {"keep": [[0, 30]]})
+            wj(os.path.join(cw, "studio.json"), {"hs": {"pod": {"on": True}, "layers": [pod_name_layer("قديم", 30)]}}); open(os.path.join(cw, "compose.html"), "w").write("x")
+            n1 = ep_speaker_set(ep, "أحمد"); L1 = [L for L in hs_of(load_studio(cw)).get("layers") or [] if L.get("auto") == "name"]
+            n2 = ep_speaker_set(ep, ""); L2 = [L for L in hs_of(load_studio(cw)).get("layers") or [] if L.get("auto") == "name"]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read()
+        chk("4.47: نص البودكاست بدون &gt;&gt;، اسم المتكلم لكل حلقة (مو ثابت)، Claude يدرس الحلقة كاملة قبل ما يرشّح، البناء يبنيه Claude، الخطوات تعطيك خبر، وخط Marhey انشال",
+            title_clean("&gt;&gt; هو وافق &gt;&gt; طاعه") == "هو وافق طاعه" and W_.get("speaker") == "سعيد الزهراني" and W_.get("study") is True
+            and L1 and L1[0]["text"] == "أحمد" and not L1[0].get("off") and L2 and L2[0].get("off") and n1 == 1
+            and 'want_["speaker"] if "speaker" in want_ else pod_speaker' in me_ and "nm_ = good" in me_ and 'if what == "build":' in me_ and "ادرس الحلقة كاملة" in me_
+            and "Marhey" not in ex_ and "'Marhey'" not in ap_.split("AR_FONTS=")[1][:600] and "function buildRun(" in ap_ and "function stepNews(" in ap_ and 'id="epSpk"' in hb_ and "data-nstudy" in hb_ and 'id="hostName"' not in hb_,
+            "speaker %s · study %s · layers %s/%s" % (W_.get("speaker"), W_.get("study"), bool(L1), bool(L2)))
+    except Exception as e: chk("4.47", False, str(e)[:240])
+    try:   # 4.48: إيموجي الكابشن: القاموس، نفس الاختيار بالمحرّك والطرفية، الأوامر، الواجهة، والمطفي نفس القديم
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read()
+        E0 = emo_core(); D_ = E0["dict"]
+        okd = len(D_) >= 300 and all(v and not re.search(r"[؀-ۿA-Za-z]", v) for v in D_.values())
+        WS_ = ["بالفلوس", "وفكرتي", "الذكاء", "قهوتي", "السعودية", "للمشروع", "كتابك", "money", "كيف", "في", "اللي", "سؤالكم", "بسرعة", "هالغلط", "وأفكاركم", "مشكلتي"]
+        EXP_ = ["💰", "💡", "🧠", "☕", "🇸🇦", "🚀", "📚", "💰", None, None, None, "❓", "⚡", "❌", "💡", "🧩"]
+        okm = [emo_match(w) for w in WS_] == EXP_
+        def _cw(ws, s0): return {"s": s0, "e": s0 + 2, "w": [{"t": t_, "s": round(s0 + i * 0.3, 2), "e": round(s0 + i * 0.3 + 0.25, 2), "hot": h_} for i, (t_, h_) in enumerate(ws)]}
+        CC_ = [_cw([("هذي", 0), ("فكرة", 0), ("بسيطة", 0)], 0.2), _cw([("فلوس", 1), ("كل", 0), ("يوم", 0)], 1.5), _cw([("قهوتي", 0), ("الصبح", 0)], 4.4), _cw([("المشروع", 0), ("بسرعة", 1)], 7.0), _cw([("كذا", 0), ("وبس", 0)], 9.6), _cw([("الغلط", 0)], 11.0)]
+        EE_ = [{}, {"gap": 0}, {"only": "hot"}, {"set": {"كذا وبس": "🔥", "قهوتي الصبح": ""}}, {"auto": False, "set": {"كذا وبس": "🔥"}}]
+        P_ = [emo_plan(CC_, {**EMO_DEF, **e}) for e in EE_]
+        okp = ([x["em"] for x in P_[0]] == ["💰", "☕", "⚡", "❌"] and [x["t"] for x in P_[1]] == ["فكرة", "فلوس", "قهوتي", "بسرعة", "الغلط"] and [x["em"] for x in P_[2]] == ["💰", "⚡"]
+               and [(x["em"], x["by"]) for x in P_[3]] == [("💰", "auto"), ("🔥", "you")] and [x["em"] for x in P_[4]] == ["🔥"])
+        jsp = None; m_ = re.search(r"/\*EMOCORE\{\*/(.*?)/\*\}EMOCORE\*/", ex_, re.S)
+        if m_ and shutil.which("node"):
+            r_ = subprocess.run(["node", "-e", m_.group(1) + "const W=%s, C=%s, E=%s; console.log(JSON.stringify({m:W.map(emoMatch),p:E.map(e=>emoPlan(C,Object.assign(%s,e)))}));" % (json.dumps(WS_, ensure_ascii=False), json.dumps(CC_, ensure_ascii=False), json.dumps(EE_, ensure_ascii=False), json.dumps({k: v for k, v in EMO_DEF.items() if k != "set"}))],
+                                capture_output=True, text=True, encoding="utf-8", timeout=60)
+            if r_.returncode == 0: jsp = json.loads(r_.stdout.strip())
+        okj = jsp is not None and jsp["m"] == EXP_ and jsp["p"] == P_
+        td = tempfile.mkdtemp(prefix="hs-48-"); er_ = []
+        try:
+            wj(os.path.join(td, "caps.json"), {"total": 13, "cards": CC_}); wj(os.path.join(td, "studio.json"), {"hs": {}})
+            import contextlib, io
+            with contextlib.redirect_stdout(io.StringIO()) as o_:
+                cmd_emoji(td, ["on"]); cmd_emoji(td, ["set", "5", "🔥"]); cmd_emoji(td, ["set", "3", "none"]); cmd_emoji(td, ["anim", "bounce"]); cmd_emoji(td, ["size", "500"]); cmd_emoji(td, ["list"])
+                for bad_ in (["set", "9", "🔥"], ["set", "1", "فلوس"], ["pos", "left"], ["anim", "spin"]):
+                    try: cmd_emoji(td, bad_)
+                    except SystemExit as e: er_.append(str(e))
+            E1 = emo_of(hs_of(load_studio(td))); out_ = o_.getvalue()
+        finally: shutil.rmtree(td, ignore_errors=True)
+        okc = (E1["on"] is True and E1["set"] == {"كذا وبس": "🔥", "قهوتي الصبح": ""} and E1["anim"] == "bounce" and E1["size"] == 200 and len(er_) == 4 and "🔥" in out_ and "(اختيارك)" in out_)
+        okw = ("if(HSX.emoji&&HSX.emoji.on){ try{ emojiDraw(c,t);" in ex_ and "EMOW.push({s:i.s,t:i.t,x:cx+dx+(cxw-cx)*sc})" in ex_ and "window.__hsEmoji=" in ex_ and "Noto Color Emoji" in ex_
+               and "function emoSec(" in ap_ and "+emoCardSec(i,c)" in ap_ and "o+=emoSec(h);" in ap_ and "data-emoset" in ap_ and "h.emoji={on:false," in ap_
+               and all(("%s:" % k) in i18_ for k in ("emoT", "emoOn", "emoSub", "emoAutoT", "emoPos", "emoAnim", "emoOnly", "emoGap", "emoCount", "emoCard", "emoAuto", "emoNone", "emoPh", "emoUse", "emoBad", "emoOnlyYours", "emoHint", "emoChange", "emoOffHint"))
+               and "hs emoji" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.48: إيموجي الكابشن (قاموس %d كلمة، يطلع فوق الكلمة لما تنقال، الكلمات المهمة أول ومسافة بينهم، اختيارك لكل جملة، نفس الحساب بالمحرّك والطرفية، والمطفي نفس الرسم القديم)" % len(D_),
+            okd and okm and okp and okj and okc and okw, "dict %s match %s plan %s js %s cli %s ui %s err %s" % (okd, okm, okp, okj, okc, okw, er_))
+    except Exception as e: chk("4.48: إيموجي الكابشن", False, str(e)[:240])
+    try:   # 4.49: «اطلب من Claude» صار شات
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i8_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); sh_ = open(os.path.join(HERE, "studio.html"), encoding="utf-8").read()
+        chk("4.49: «اطلب من Claude» صار شات (طلبك ورد Claude فقاعات، والخطوات بينهم، والكتابة تحت)",
+            "o+=agHtml();" in ap_ and "function agThread(" in ap_ and "function agFeed(" in ap_ and 'id="pFeed"' not in ap_ and "e.target.id==='agTx'&&e.key==='Enter'" in ap_ and "agEmpty:" in i8_ and ".agchat .chatlog" in sh_)
+    except Exception as e: chk("4.49", False, str(e)[:240])
     if work and os.path.isdir(work):
         eng = find_engine(engine)
         if not eng: chk("المحرّك موجود لفحص الخادم", False)
@@ -3950,7 +4915,11 @@ def cmd_check(work):
         nm = PLATFORMS[l["p"]]["ar"]
         print("المدة: " + ({"over": "%s ما يقبل أكثر من %d ث، ومقطعك %.0f ث" % (nm, l["max"], c["total"]), "long": "%s الأنسب له %d-%d ث، ومقطعك %.0f ث" % (nm, l["lo"], l["hi"], c["total"]),
                             "short": "%s الأنسب له %d-%d ث، ومقطعك %.0f ث بس" % (nm, l["lo"], l["hi"], c["total"])}[l["k"]]))
-    if not (c["gaps"] or c["longCaps"] or c["fillers"] or c["dupes"] or c.get("tips") or c["open"]["miss"] or c["len"]): print("ما فيه ملاحظات.")
+    sh_ = c.get("shake") or {}
+    if sh_.get("level") in ("light", "strong") and sh_.get("on") == "off": print("الصورة تهتز (%.1f بكسل): hs stab <work> auto يثبّتها" % sh_["jitter"])   # 4.40
+    hd_ = c.get("hdr") or {}
+    if hd_.get("washed"): print("ألوان الفيديو باهتة: الفيديو %s من الجوال. hs hdr <work> auto يصلّحها" % ("HDR (HLG)" if hd_.get("kind") == "hlg" else "HDR (PQ)"))   # 4.41
+    if not (c["gaps"] or c["longCaps"] or c["fillers"] or c["dupes"] or c.get("tips") or c["open"]["miss"] or c["len"] or (sh_.get("level") in ("light", "strong") and sh_.get("on") == "off") or hd_.get("washed")): print("ما فيه ملاحظات.")
 def brand_dir(): d = os.path.join(HOME_CFG, "brands"); os.makedirs(d, exist_ok=True); return d
 def brand_pack(work):
     hs = load_studio(work).get("hs") or {}; th = rj(J(work, "theme.json"), {}) or {}
@@ -4269,6 +5238,18 @@ def serve(work, port, engine):
                 except Exception: pass
         return _bjob(kind, wrapped)
     base.job = _hjob
+    _bdb = base.do_broll
+    def _hbroll(name, data):   # 4.39: اللقطة اللي ترفعها لو شاشة خضراء تنكشف وتنحفظ كاملة
+        _bdb(name, data)
+        try:   # 4.41: لقطة HDR من الجوال (بدون محوّل أبل) تطلع بألوانها الصح بدل الباهتة
+            d_ = json.loads(base.JOB.get("done") or "{}")
+            if d_.get("key") and broll_hdr_fix(work, d_["key"], base.log): d_["hdr"] = True; base.JOB["done"] = json.dumps(d_)
+        except Exception: pass
+        try:
+            d_ = json.loads(base.JOB.get("done") or "{}"); col = key_fit(work, d_.get("key")) if d_.get("key") else None
+            if col: d_["gs"] = col; base.JOB["done"] = json.dumps(d_)
+        except Exception: pass
+    base.do_broll = _hbroll
     try: hist_checkpoint(work, "تعديل من Claude")
     except Exception: pass
     P = base.P; S = base.S
@@ -4363,6 +5344,20 @@ def serve(work, port, engine):
                 if r.returncode or not os.path.exists(tmp): return None
                 os.replace(tmp, f)
         return f
+    def clean_audio_file():
+        """4.44: «تنظيف خفيف» ينسمع بالمعاينة بعد (نفس فلتر التصدير)."""
+        src = P("cutz.mp4")
+        if not os.path.exists(src): return None
+        f = os.path.join(D, "au-clean-%s.m4a" % vsig(work))
+        with AUL:
+            if not os.path.exists(f):
+                for old in glob.glob(os.path.join(D, "au-clean-*.m4a")):
+                    try: os.remove(old)
+                    except OSError: pass
+                tmp = f + ".part.m4a"; r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-af", CLEAN_AF.rstrip(","), "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", tmp], capture_output=True)
+                if r.returncode or not os.path.exists(tmp): return None
+                os.replace(tmp, f)
+        return f
     def sv_audio_file():
         """4.12: نفس الصوت بعد صوت الاستوديو (أو اللي عالجته من برا)، عشان تسمع اللي بيطلع بالتصدير."""
         mix = hs_of(load_studio(work)).get("mix") or {}
@@ -4429,6 +5424,7 @@ def serve(work, port, engine):
         exe = find_claude(); oc = None if exe else shutil.which("opencode")
         if not exe and not oc: return False, "ما لقيت Claude Code ولا OpenCode على الجهاز"
         if AG["running"]: return False, "الوكيل شغّال الحين على طلب سابق"
+        task = lang_hint(task)
         if oc: return agent_run_opencode(oc, task, label)
         cmd = [exe, "-p", "Follow the task given on stdin. Work only inside the current project folder.", "--output-format", "stream-json", "--verbose",
                "--permission-mode", "acceptEdits", "--append-system-prompt-file", os.path.join(HERE, "AGENT.md"),
@@ -4565,6 +5561,31 @@ def serve(work, port, engine):
                 try: f_ = vpos_thumb(work, float((q.get("t") or ["0"])[0]))
                 except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
                 b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
+            if p == "/hs/hdr_info":   # 4.41: ألوان HDR
+                return self._json(200, {"ok": True, **hdr_info(work)})
+            if p == "/hs/mfit.wav":   # 4.45: تسمع الموسيقى المفصّلة
+                f_ = music_fit_file(work)
+                if not f_: return self.send_error(404)
+                return self._file(f_, "audio/wav")
+            if p == "/hs/fix_preview":   # 4.44: قبل وبعد لأدوات الصورة
+                if base.JOB["running"]: return self._json(409, {"ok": False, "msg": "فيه عملية شغالة"})
+                try:
+                    F_ = json.loads((q.get("fix") or ["{}"])[0] or "{}")
+                    f_ = fix_preview(work, float((q.get("t") or ["0"])[0]), F_ if isinstance(F_, dict) else {})
+                except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
+                b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
+            if p == "/hs/hdr_preview":   # 4.41: قبل وبعد لنفس اللحظة
+                if base.JOB["running"]: return self._json(409, {"ok": False, "msg": "فيه عملية شغالة"})
+                try: f_ = hdr_preview(work, float((q.get("t") or ["0"])[0]), (q.get("level") or ["on"])[0])
+                except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
+                b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
+            if p == "/hs/stab_info":   # 4.40: آخر فحص للاهتزاز
+                return self._json(200, {"ok": True, "info": stab_info(work), "level": stab_level(work), "can": stab_has()})
+            if p == "/hs/stab_preview":   # 4.40: قبل وبعد يتحركون
+                if base.JOB["running"]: return self._json(409, {"ok": False, "msg": "فيه عملية شغالة"})
+                try: f_ = stab_preview(work, float((q.get("t") or ["0"])[0]), (q.get("level") or ["light"])[0])
+                except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
+                b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "video/webm" if f_.endswith(".webm") else "video/mp4"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
             if p == "/hs/quality_preview":   # 4.25: قبل وبعد
                 try: f_ = quality_preview(work, float((q.get("t") or ["0"])[0]), (q.get("level") or ["light"])[0])
                 except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
@@ -4602,8 +5623,6 @@ def serve(work, port, engine):
                 cd = P("carousel"); zp = os.path.join(D, "carousel.zip")
                 with zipfile.ZipFile(zp, "w") as z:
                     for f in sorted(glob.glob(os.path.join(cd, "*.png"))): z.write(f, os.path.basename(f))
-                    rp = rj(P("repurpose.json"), {}) or {}
-                    if rp: z.writestr("thread.txt", "\n\n".join(rp.get("thread") or [])); z.writestr("youtube.txt", (rp.get("yt") or {}).get("title", "") + "\n\n" + (rp.get("yt") or {}).get("desc", ""))
                 return self._file(zp, "application/zip", dl=os.path.basename(work.rstrip("/\\")) + "-carousel.zip")
             if p == "/hs/pack.zip" and os.path.exists(os.path.join(D, "pack.zip")): return self._file(os.path.join(D, "pack.zip"), "application/zip", dl=os.path.basename(work.rstrip("/\\")) + "-publish.zip")
             if p.startswith("/sfx_prev/"):
@@ -4622,7 +5641,7 @@ def serve(work, port, engine):
                 if not f: return self.send_error(404)
                 self.path = "/.hs/" + os.path.basename(f); return self._ranged() if self._wants_range() else self._file(f, "audio/mp4")
             if p == "/hs/au.m4a":
-                f = sv_audio_file() if (q.get("sv") or [""])[0] == "1" else audio_file()
+                f = sv_audio_file() if (q.get("sv") or [""])[0] == "1" else (clean_audio_file() if (q.get("clean") or [""])[0] == "1" else audio_file())
                 if not f: return self.send_error(404)
                 self.path = "/.hs/" + os.path.basename(f); return self._ranged() if self._wants_range() else self._file(f, "audio/mp4")
             if p == "/hs/tools":
@@ -4651,7 +5670,7 @@ def serve(work, port, engine):
             self.path = p + (("?" + u.query) if u.query and "k=" not in u.query else "")
             return super().do_GET()
         def do_POST(self):
-            p0 = urllib.parse.urlparse(self.path).path
+            p0 = urllib.parse.urlparse(self.path).path; lang_from(self)
             if p0 in ("/hs/undo", "/hs/redo") or not self._role(): return self._do_POST()
             try: hist_checkpoint(work, "تعديل من Claude")
             except Exception: pass
@@ -4801,6 +5820,35 @@ def serve(work, port, engine):
                         task = ("شيل خلفية الصورة %s بمشروع \"%s\". جرّب أول: python hs.py rmbg \"%s\" \"%s\" . لو قال ما قدر (خلفية معقدة ومو شخص): استخدم أداة شيل الخلفية من حساب المستخدم (Higgsfield remove_background، أو Canva remove-background) وقل له قبلها إنها تستهلك من رصيده، "
                                 "واحفظ الناتج PNG بمجلد assets باسم الصورة-nobg.png، وبعدها غيّر src بالطبقة اللي تستخدمها لهذا الملف بـ studio.json (وخلّ srcOrig بالأصل).") % (src_, work, work, src_)
                         ok, msg = agent_run(task, "Claude يشيل الخلفية"); return self._json(200, {"ok": ok, "msg": msg})
+                    if what == "build":   # 4.47: البناء: Claude يبني المقطع من الخطة (مو قوائم تختار منها)
+                        task = ("ابنِ المقطع بمجلد %s من خطته plan.json. أول شي: python hs.py plan \"%s\" build (يحط الصور بحركتها). "
+                                "بعدها لكل بند بالخطة طبّق اللي بـ show وmotion بطبقات حقيقية (hs layer add …): موشن جاهز (type=mg) للأرقام والقوائم والمقارنات، نص يطلع مع الكلمة، تعليقات على الصور، وانتقالات، "
+                                "حسب engine/references/motion-graphics.md وبنفس هوية المقطع. التزم بأوقات كل بند، ولا تغطي وجهه طول الوقت، ولا تلمس القص ولا الكابشن. "
+                                "اكتب كل خطوة بـ hs say بسطر قصير، وبالآخر hs say \"خلص البناء\" done.") % (work, work)
+                        ask_ = str(data.get("text") or "").strip()[:600]
+                        if ask_: task += "\nطلب المستخدم: " + ask_
+                        ok, msg = agent_run(task, "Claude يبني المقطع"); return self._json(200, {"ok": ok, "msg": msg})
+                    if what == "capreview":   # 4.43: يراجع الكابشن ويكتب اقتراحاته وأسئلته بملف، والمستخدم يختار
+                        try: os.remove(capr_path(work))
+                        except FileNotFoundError: pass
+                        task = ("راجع كابشن هذا المشروع كلمة كلمة. اقرأ الجمل بأرقامها: python hs.py text \"%s\" show ، والكلمات اللي ما تأكد منها التفريغ: python hs.py caps \"%s\" unsure .\n"
+                                "لا تعدّل الكابشن بنفسك. اكتب ملف .hs/caps_review.json بمجلد المشروع (UTF-8) بهالشكل بالضبط:\n"
+                                '{"summary": "سطر واحد: كم كلمة صححت ووش نوعها، وكم سؤال عندك", "fixes": [{"id": "f1", "card": رقم الجملة, "from": "الكلمة أو الكلمات الغلط كما هي مكتوبة بالجملة", "to": "الصح", "why": "السبب بكلمات قليلة"}], '
+                                '"asks": [{"id": "q1", "cards": [أرقام الجمل اللي فيها نفس الشي], "from": "الكلمات كما هي مكتوبة", "q": "سؤال قصير", "opts": ["الأرجح", "خيار ثاني", "المكتوب كما هو"], "note": "اختياري: تكررت كم مرة"}]}\n'
+                                "fixes = اللي متأكد منه من سياق الكلام (سماع غلط، اسم مكتوب غلط، كلمة انكتبت فصحى وهو قالها بلهجته). asks = اللي ما تقدر تحسمه: سؤال وخيارات، أولها الأرجح وآخرها يبقي المكتوب كما هو.\n"
+                                "from لازم يكون كلمات موجودة بالجملة بالضبط. لا تغيّر أسلوبه ولا لهجته ولا ترتيب كلامه، ولا تصحح نحو. حد أقصى 30 تصحيح و8 أسئلة. لو كل شي صح اكتب fixes وasks فاضية.") % (work, work)
+                        ok, msg = agent_run(task, "المساعد يراجع الكابشن"); return self._json(200, {"ok": ok, "msg": msg})
+                    if what in ("planimg", "plangen", "planw"):   # 4.43: الخطة كخطوة
+                        pl_ = plan_load(work) or {}; ids_ = [str(x) for x in data.get("ids") or []]
+                        if what == "planw": task, lab_ = plan_task(work, pl_, str(data.get("text") or "").strip()), "المساعد يكتب الخطة"
+                        elif what == "planimg": task, lab_ = planimg_task(work, pl_, ids_), "المساعد يجيب الصور"
+                        else:
+                            eng_ = str(data.get("engine") or "code")
+                            if eng_ not in PLAN_GEN: return self._json(400, {"ok": False, "msg": "طريقة التوليد غير معروفة"})
+                            if not ids_: ids_ = [str(x.get("id")) for x in pl_.get("items") or [] if x.get("kind") == "gen" and not x.get("src")][:2]
+                            if not ids_: return self._json(200, {"ok": False, "msg": "ما فيه بنود تحتاج صورة"})
+                            task, lab_ = plangen_task(work, ids_, eng_), "المساعد يصنع الصور"
+                        ok, msg = agent_run(task, lab_); return self._json(200, {"ok": ok, "msg": msg})
                     if what in ("unsure", "plan", "plan2"):   # 4.10
                         ask = str(data.get("text") or "").strip()[:800]
                         if what == "unsure":
@@ -4817,10 +5865,13 @@ def serve(work, port, engine):
                         ask = str(data.get("text") or "").strip()[:600]
                         task = ("راجع «اختيار الجمل» بهذا المشروع. شغّل: python hs.py takes \"%s\" list --all واقرأ كل المحاولات. بكل مجموعة إعادة اختار الأفضل بالمعنى (الكاملة، الصح بالمعلومة، الأوضح، وغالباً الأخيرة لكن مو دايم) بـ: "
                                 "python hs.py takes \"%s\" use <رقم> --why \"السبب بكلمتين\" --claude. واحذف أي بداية متروكة أو جملة قالها وأعادها بصياغة ثانية (drop <رقم> --why …)، ورجّع أي شي انحذف وهو مهم (keep). "
-                                "لا تحذف كلام فيه معلومة ما انقالت بمكان ثاني. بعدها: python hs.py takes \"%s\" note \"ملخص سطر\" ثم python hs.py takes \"%s\" apply. %s") % (work, work, work, work, ("طلب المستخدم: " + ask) if ask else "")
+                                "لا تحذف كلام فيه معلومة ما انقالت بمكان ثاني: قبل ما تحذف أي جملة تأكد إن معناها كامل بجملة باقية، ولو هي الوحيدة اللي فيها المعلومة خلها حتى لو فيها تلعثم. المقطع بعد القص لازم ينفهم من أوله لآخره بنفس المعنى والترتيب. %s") % (work, work, ("طلب المستخدم: " + ask) if ask else "")
+                        guide_ = bool(hs_of(load_studio(work)).get("guide"))
+                        task = ("أول شي صحّح التفريغ: python hs.py caps \"%s\" unsure واقرأ الجمل كاملة؛ أي كلمة سمعها التفريغ غلط صححها بالمعنى من سياقها (python hs.py text \"%s\" <رقم الجملة> \"النص الصح\") بدون ما تغيّر كلامه ولا لهجته.\n" % (work, work)) + task
+                        task += ("\nبعدها: python hs.py takes \"%s\" note \"ملخص سطر\". لا تطبّق القص (لا تشغّل takes apply): المستخدم يراجع اختيارك ويعتمده بنفسه بزر «اقطع المقطع»." % work) if guide_ else ("\nبعدها: python hs.py takes \"%s\" note \"ملخص سطر\" ثم python hs.py takes \"%s\" apply." % (work, work))
                         ok, msg = agent_run(task, "Claude يختار الجمل"); return self._json(200, {"ok": ok, "msg": msg})
                     if what == "repurpose":
-                        task = ("حسّن نصوص النشر بملف repurpose.json بمجلد المشروع بلهجة صاحب المقطع: عنوان يشد، 4 إلى 5 نقاط للكاروسيل (كل وحدة جملة قصيرة)، ثريد X، وعنوان ووصف يوتيوب. "
+                        task = ("حسّن نصوص النشر بملف repurpose.json بمجلد المشروع بلهجة صاحب المقطع: عنوان يشد، 4 إلى 5 نقاط للكاروسيل (كل وحدة جملة قصيرة)، وجملة دعوة قصيرة. "
                                 "لا تغيّر شكل الملف ولا تلمس أي ملف ثاني. خلّ by = claude.")
                     else: task = "صلّح هالمشاكل بالمقطع (فحص الاحتفاظ). أقل تعديل يكفي، وبعدها قل وش سويت بسطرين:\n- " + "\n- ".join(items)
                     ok, msg = agent_run(task, "تحسين بـClaude: " + ("نصوص النشر" if what == "repurpose" else "فحص الاحتفاظ"))
@@ -4836,9 +5887,30 @@ def serve(work, port, engine):
                     if "approve" in data: pl["approved"] = bool(data["approve"])
                     if data.get("rm") is not None: pl["items"] = [x for x in pl.get("items") or [] if str(x.get("id")) != str(data["rm"])]
                     if data.get("feedback") is not None: pl["feedback"] = str(data["feedback"])[:1500]; pl["approved"] = False
+                    if data.get("idea") is not None: pl["idea"] = str(data["idea"])[:1500]   # 4.43: فكرته وتفضيلات الصور
+                    if isinstance(data.get("prefs"), dict):
+                        pr_ = data["prefs"]; pl["prefs"] = {"img": [x for x in pr_.get("img") or [] if x in PLAN_IMG], "gen": [x for x in pr_.get("gen") or [] if x in PLAN_GEN]}
+                    if isinstance(data.get("item"), dict):   # صورة من جهازه لبند، أو شيلها
+                        for it_ in pl.get("items") or []:
+                            if str(it_.get("id")) != str(data["item"].get("id")): continue
+                            sv_ = str(data["item"].get("src") or "")
+                            if sv_ and re.match(r"^assets/[\w.\- ]+$", sv_) and os.path.isfile(P(sv_)): it_.update(src=sv_, srcBy="me")
+                            elif not sv_: it_.pop("src", None); it_.pop("srcBy", None)
+                    if data.get("draft"):   # خطة سريعة من كلامه (بدون Claude)، وتبقى فكرته وتفضيلاته
+                        keep_ = {k_: pl.get(k_) for k_ in ("idea", "prefs") if pl.get(k_) is not None}; pl = plan_draft(work, force=True) or {}
+                        for i_, it_ in enumerate(pl.get("items") or []):   # صورة حقيقية لمشهد ووجهه بالي بعده، عشان ما تغطي كل جملة
+                            it_["kind"] = "web" if i_ % 2 == 0 else "none"
+                            if i_ % 2 == 0: it_["query"] = it_.get("speech", "")[:80]
+                        pl.update(keep_)
                     wj(P("plan.json"), pl); return self._json(200, plan_view(work))
                 if p == "/hs/plan_build":   # 4.16: ابنِ الصور والموشن من الخطة
                     n_, miss_ = plan_build(work); return self._json(200, {"ok": True, "n": n_, "miss": miss_, "plan": plan_view(work)})
+                if p == "/hs/caps_review":   # 4.43: مراجعة الكابشن مع المساعد
+                    if data.get("act"):
+                        try: rv = capr_act(work, str(data["act"]), data.get("ids"), data.get("id"), data.get("opt"))
+                        except Exception as ex: return self._json(200, {"ok": False, "msg": str(ex)[:200]})
+                        return self._json(200, {"ok": True, "review": rv})
+                    return self._json(200, {"ok": True, "review": capr_load(work)})
                 if p == "/hs/unsure":
                     u = caps_unsure(work); return self._json(200, {"ok": True, "n": len(u), "items": u[:200]})
                 if p == "/hs/cuts_fix":
@@ -4876,6 +5948,42 @@ def serve(work, port, engine):
                     st_ = load_studio(work); hs_of(st_)["enhance"] = {"level": lv}; wj(J(work, "studio.json"), st_)
                     def go(): vfr_extract(work, base.log, lv); base.JOB["reload"] = True
                     ok = base.job("quality", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                if p == "/hs/stab":   # 4.40: تثبيت الصورة (يطلّع الفريمات من جديد مثبّتة)
+                    lv = data.get("level") if data.get("level") in STAB_LEVELS else "off"
+                    st_ = load_studio(work); hs_of(st_)["stab"] = {"level": lv}; wj(J(work, "studio.json"), st_)
+                    def go(): vfr_extract(work, base.log); base.JOB["reload"] = True
+                    ok = base.job("stab", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                if p == "/hs/fix":   # 4.44: يطبّق أدوات الصورة على الفريمات
+                    F_ = data.get("fix") if isinstance(data.get("fix"), dict) else {}
+                    st_ = load_studio(work); H_ = hs_of(st_)
+                    if F_: H_["fix"] = F_
+                    else: H_.pop("fix", None)
+                    wj(J(work, "studio.json"), st_)
+                    def go(): vfr_extract(work, base.log); base.JOB["reload"] = True
+                    ok = base.job("fix", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                if p == "/hs/slowmo":   # 4.45: حركة بطيئة لجزء
+                    try: a_ = (float(data["s"]), float(data["e"]), float(data.get("r") or 0.5))
+                    except (KeyError, TypeError, ValueError): return self._json(400, {"ok": False, "msg": "حدد الجزء"})
+                    def go(): slowmo_make(work, a_[0], a_[1], a_[2], bool(data.get("mute", True)), base.log); base.JOB["reload"] = True
+                    ok = base.job("slowmo", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                if p == "/hs/music_fit":   # 4.45: تفصيل الموسيقى على طول المقطع
+                    if data.get("off"):
+                        st_ = load_studio(work); hs_of(st_).setdefault("mix", {}).pop("fit", None); wj(J(work, "studio.json"), st_); return self._json(200, {"ok": True, "off": True})
+                    try: return self._json(200, music_fit(work, log=base.log))
+                    except Exception as ex: return self._json(200, {"ok": False, "msg": str(ex)[:200]})
+                if p == "/hs/scenes":   # 4.44: اكتشاف القطعات
+                    try: L_ = scene_cuts(work, float(data.get("thr") or 0.32))
+                    except Exception as e: return self._json(200, {"ok": False, "msg": str(e)[:200]})
+                    return self._json(200, {"ok": True, "cuts": L_})
+                if p == "/hs/hdr":   # 4.41: ألوان HDR (يطلّع الفريمات من جديد بالألوان الصح)
+                    lv = data.get("level") if data.get("level") in HDR_LEVELS else "auto"
+                    st_ = load_studio(work); hs_of(st_)["hdr"] = {"level": lv}; wj(J(work, "studio.json"), st_)
+                    def go(): vfr_extract(work, base.log); base.JOB["reload"] = True
+                    ok = base.job("hdr", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                if p == "/hs/stab_check":   # 4.40: فحص الاهتزاز
+                    if not stab_has(): return self._json(200, {"ok": False, "msg": "ffmpeg اللي عندك ما فيه vid.stab، فالتثبيت يمشي بالطريقة البسيطة (deshake) بدون فحص"})
+                    def go(): stab_analyze(work, base.log, True)
+                    ok = base.job("stab_check", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
                 if p == "/hs/move_shot":   # 4.23: نقل لقطة لمكان ثاني (فوري)
                     if base.JOB["running"]: return self._json(409, {"ok": False, "msg": "فيه عملية شغالة"})
                     try: r_ = move_shot(work, data.get("s"), data.get("e"), data.get("to"))
@@ -5349,12 +6457,24 @@ def pod_repair(work):
                 if good: L["text"] = good; P_["speaker"] = good
                 else: L["off"] = True
                 ch = True; wj(J(work, "studio.json"), st)
+        # 4.42: كتب اسم المقدّم بالمكتبة والمقطع بدون صندوق اسم: ينضاف مرة وحدة (لو حذفه بعدين ما يرجع)
+        nm_ = good   # 4.47: ما نحط اسم ثابت من الإعدادات على كل مقطع
+        if nm_ and not P_.get("speaker") and not any(L.get("auto") == "name" for L in h.get("layers") or []):
+            du_ = float((rj(J(work, "caps.json"), {}) or {}).get("total") or 0) or (float(P_.get("to") or 0) - float(P_.get("from") or 0)) or 600
+            h.setdefault("layers", []).append(pod_name_layer(nm_, du_)); P_["speaker"] = nm_; h["pod"] = P_; ch = True; wj(J(work, "studio.json"), st)
     return ch
+def pod_name_layer(name, dur):
+    """صندوق اسم المتكلم فوق يمين: طرفه اليمين ثابت والاسم الطويل يمتد لليسار بدل ما يطلع برّا الشاشة."""
+    nm = re.sub(r"\s+", " ", str(name)).strip()[:40]; w_ = (len(nm) * POD_NAME["size"] * 0.5 + POD_NAME["size"]) / 1080
+    return {**POD_NAME, "id": "LN1", "text": nm, "x": round(min(POD_NAME["x"], 0.94 - w_ / 2), 3), "s": 0, "e": round(float(dur), 2)}
 def pod_speaker(title):
     """اسم الضيف من عنوان الحلقة: «… مع ياسر الحزيمي | بودكاست فنجان» ← ياسر الحزيمي."""
     t_ = str(title or ""); m = re.search(r"(?:^|\s)(?:مع|with|ft\.?|feat\.?)\s+([^|\-–—:(\[\]#،,]{3,40})", t_, re.I)
     nm = re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
     if nm and nm.split()[0] not in POD_NOTNAME and nm not in POD_NOTNAME: return nm
+    # 4.42: «قواعد نبوية . الشيخ سعيد بن علي الزهراني»: اللقب واللي بعده
+    m2 = re.search(r"(?:^|[\s.|｜\-–—])((?:الشيخ|الدكتور|الأستاذ|الاستاذ|المهندس|الداعية|د\.)\s+[^|\-–—:(\[\]#،,.]{3,40})", t_)
+    if m2: return " ".join(m2.group(1).split()[:5])
     # 4.31: «مركزية العلاقة مع الله | ياسر الحزيمي»: «الله» مو اسم، والاسم هو الجزء اللي بعد |
     for part in re.split(r"\s*[|｜]\s*|\s+[-–—]\s+", t_)[1:]:
         p_ = part.strip(); w_ = p_.split()
@@ -5487,10 +6607,10 @@ def clip_make(d, a_, b_, title="", credit="", name=None, style=None):
     if title: hs["title"] = title
     if style == "pod":
         want_ = cfg.get("want") or {}; trl = want_.get("tr") or ("ar" if lang != "ar" else "en")
-        spk = want_.get("speaker") or pod_speaker(cfg.get("title"))
+        spk = want_["speaker"] if "speaker" in want_ else pod_speaker(cfg.get("title"))   # 4.47: اسم المتكلم لهالحلقة (اللي كتبه لها، وإلا من العنوان). مو اسم ثابت لكل البودكاست
         hs["pod"] = {"on": True, "title": title, "titleOn": False, "speaker": spk, "credit": credit, "lang": lang, "orig": lang != trl, "tr": trl, "src": os.path.basename(cfg.get("src") or "") or cfg.get("remote") or "", "from": round(a_, 2), "to": round(b_, 2)}
         hs["vpos"] = {**(hs.get("vpos") or {}), "still": True}   # 4.27: بدون زوم يتغيّر بين اللقطات
-        if spk: hs.setdefault("layers", []).append({**POD_NAME, "id": "LN1", "text": spk, "s": 0, "e": round(b_ - a_, 2)})
+        if spk: hs.setdefault("layers", []).append(pod_name_layer(spk, b_ - a_))
         if want_.get("dub"): hs["dubWant"] = want_["dub"]   # 4.26: طلب دبلجة: Claude يكمّلها (hs dub)
         H = host_cfg()
         if want_.get("host", False) and H.get("on"):   # 4.26: شخصية المقدّم الثابتة بزاوية المقطع
@@ -5697,7 +6817,7 @@ def clips_build(d, picks, edit="none", log=print):
 
 # ── تجهيز مشروع للتعديل اليدوي بدون Claude: قص السكتات ← تفريغ ← كابشن ← زوم ← فريمات ──
 THEME_DEF = {"bg": "#101014", "ink": "#FFFFFF", "acc": "#4C8DFF", "clay": "#3f7ff0", "mut": "#9A9AA5", "font": "Cairo", "grade": False, "badgeUntil": 0}
-PREP_STEPS = ["cut", "transcribe", "captions", "zoom", "frames", "ready"]
+PREP_STEPS = ["transcribe", "cut", "captions", "zoom", "frames", "ready"]   # 4.43: التفريغ أول
 def prep_state(work): return rj(J(work, ".hs", "prep.json"), {}) or {}
 def prep(work, model=None, lang=None, keep_silence=False, log=print):
     eng = find_engine(None)
@@ -5713,20 +6833,23 @@ def prep(work, model=None, lang=None, keep_silence=False, log=print):
         if r.returncode != 0: raise RuntimeError(script + ": " + (r.stderr or r.stdout).strip()[-400:])
         return r.stdout
     try:
-        st("cut")
-        if not os.path.isfile(J(work, "cut.json")):
-            if keep_silence: wj(J(work, "cut.json"), {"keep": [[0, round(dur, 3)]], "total": round(dur, 3), "src_dur": round(dur, 3)})
-            else: py("01_cut_plan.py")
-        if not os.path.isfile(J(work, "a.json")):
+        if not os.path.isfile(J(work, "a.json")):   # 4.43: التفريغ قبل القص، عشان القص يعرف وين الكلام الواطي وما يشيله
             st("transcribe", eta=int(max(40, dur * (0.6 if model in ("small", "base", "tiny") else 1.6))))
             wav = J(work, "a.wav")
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", wav], check=True)
             whisper_run(wav, work, model, lang, J(work, "whisper.log"))
+        st("cut")
+        if not os.path.isfile(J(work, "cut.json")):
+            if keep_silence: wj(J(work, "cut.json"), {"keep": [[0, round(dur, 3)]], "total": round(dur, 3), "src_dur": round(dur, 3)})
+            else: py("01_cut_plan.py")
         A = rj(J(work, "a.json"), {}) or {}
         if not os.path.isfile(J(work, "fixes.json")):
             wj(J(work, "fixes.json"), {"fix": [[(x.get("word") or "").strip() or "…" for x in (s.get("words") or [])] for s in A.get("segments") or []], "hot": []})
         st("captions")
         if not os.path.isfile(J(work, "caps.json")): py("02_captions.py")
+        if not os.path.isfile(J(work, "takes.json")) and os.path.isfile(J(work, "a.json")):   # 4.43: الجمل جاهزة أول ما يفتح الاستوديو (اقتراحات بس، ما تنطبق إلا لما يعتمدها)
+            try: tk_scan(work)
+            except BaseException: pass
         if not os.path.isfile(J(work, "theme.json")): wj(J(work, "theme.json"), dict(THEME_DEF))
         if not os.path.isfile(J(work, "sfx.json")): wj(J(work, "sfx.json"), {"outro": 0})
         st("zoom")
@@ -5746,7 +6869,7 @@ def prep(work, model=None, lang=None, keep_silence=False, log=print):
         except Exception: pass
         st("ready", done=True); projects_remember(work); return True
     except Exception as e:
-        st(prep_state(work).get("stage") or "cut", err=str(e)[:400]); raise
+        st(prep_state(work).get("stage") or "transcribe", err=str(e)[:400]); raise
 
 # ── 4.4.1: خفيف على الجهاز ──
 # الأداة (وكل اللي تشغّله: ffmpeg وwhisper وكروم) تشتغل بأولوية أقل من برامجك، فالكمبيوتر يبقى سلس وهي تفرّغ أو تصدّر.
@@ -5792,15 +6915,17 @@ button{width:100%;height:52px;border:0;border-radius:14px;background:#d97757;col
 def stopped_html(name=""):   # 4.21: صفحة «المشروع وقف» بتصميم المكتبة، وترجع لحالها أول ما يرجع
     logo = "<div class=logo><svg viewBox='0 0 260 260' aria-hidden=true><rect width=150.5 height=46.8 fill=currentColor /><rect x=62.5 y=106.6 width=197.5 height=46.8 fill=currentColor /><rect y=213.2 width=103.7 height=46.8 fill=currentColor /></svg></div>"
     return ("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1,viewport-fit=cover'><meta name=theme-color content='#1f1e1d'>"
-            "<title>المشروع وقف · Hojas Studio</title><link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap' rel=stylesheet><style>" + LOGIN_CSS + "</style></head><body>"
+            "<title>المشروع وقف · Hojas Studio</title>" + LOGIN_EN + "<link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap' rel=stylesheet><style>" + LOGIN_CSS + "</style></head><body>"
             "<div class=c>" + logo + "<h1>الاستوديو وقف</h1><p>تشغيل المشروع" + (" «" + html.escape(name) + "»" if name else "") + " انقفل (يصير لو قفلت الاستوديو أو انطفى الجهاز أو تحدّثت النسخة). شغلك كله محفوظ وما ضاع منه شي.</p>"
             "<button class=btn onclick='location.reload()'>حاول من جديد</button><a class='btn sec' href='/library'>ارجع للمكتبة</a>"
             "<div class=st><i></i>أحاول أوصله لحالي، وأول ما يرجع أفتحه لك</div></div>"
             "<script>setInterval(()=>{ fetch(location.href,{method:'HEAD',cache:'no-store'}).then(r=>{ if(r.ok) location.reload(); }).catch(()=>{}); },3000);</script></body></html>")
+# 4.40: الصفحات هذي تنكتب بالعربي، وهذا السكربت يبدّلها للإنجليزي على جهاز لغته إنجليزي (أو اختار English قبل بالاستوديو)
+LOGIN_EN = "<script>document.addEventListener('DOMContentLoaded',function(){ var L=null; try{ L=localStorage.getItem('hsLang'); }catch(e){} if(!L) L=(navigator.language||'ar').toLowerCase().indexOf('ar')===0?'ar':'en'; if(L!=='en') return;var E={'اكتب رمز الدخول':'Enter the sign-in code','دخول':'Sign in','الرمز غلط، جرّب مرة ثانية.':'Wrong code, try again.','اكتب الأرقام كلها':'Enter all the digits','انقفل الدخول من الجوال مؤقتاً بعد محاولات كثيرة غلط. جرّب بعد ربع ساعة، أو افتح من الكمبيوتر.':'Phone sign-in is locked for now after too many wrong tries. Try again in 15 minutes, or open it on the computer.','الملقّن قريباً':'The teleprompter is coming soon','جاي بالتحديث الجاي.':'It arrives in the next update.','ارجع للمكتبة':'Back to the library','الاستوديو وقف':'The studio stopped','حاول من جديد':'Try again','أحاول أوصله لحالي، وأول ما يرجع أفتحه لك':'Trying to reconnect on its own; it reopens as soon as it is back'},W={'بالاستوديو على الكمبيوتر (زر «الجوال»)':'in the studio on your computer (the «Phone» button)','بالمكتبة على الكمبيوتر':'in the library on your computer'};document.documentElement.lang='en'; document.documentElement.dir='ltr'; document.title=document.title.replace('رمز الدخول','Sign-in code').replace('المشروع وقف','Project stopped');document.querySelectorAll('h1,p,button,a,.m').forEach(function(x){ var t=x.textContent.trim(), m=t.match(/^الرمز من (\\d+) أرقام، تلقاه (.+)\\.$/), k=t.match(/^تشغيل المشروع(?: «(.*)»)? انقفل /); if(m) x.textContent='The code has '+m[1]+' digits. Find it '+(W[m[2]]||m[2])+'.'; else if(k) x.textContent='The project'+(k[1]?' «'+k[1]+'»':'')+' stopped running (this happens when you close the studio, the computer turns off, or the version updates). All your work is saved.'; else if(E[t]) x.textContent=E[t]; });var st=document.querySelector('.st'); if(st&&st.lastChild&&E[st.textContent.trim()]) st.lastChild.textContent=E[st.textContent.trim()];var h=document.querySelector('.h'); if(h) h.innerHTML='<b>Where is the code?</b><br>On your computer open the library → <b>Computer</b> → «Open on your phone». The code is under the QR code, and scanning it signs you in without typing.<br>Your phone and computer must be on the same Wi-Fi.';document.querySelectorAll('.d input').forEach(function(x,i){ x.setAttribute('aria-label','Digit '+(i+1)); });var f=document.getElementById('f'), mm=document.getElementById('m'); if(f&&mm) f.addEventListener('submit',function(){ if(E[mm.textContent]) mm.textContent=E[mm.textContent]; });});</script>"
 def login_html(action, where, n=6, err="", locked=False):
     msg = "انقفل الدخول من الجوال مؤقتاً بعد محاولات كثيرة غلط. جرّب بعد ربع ساعة، أو افتح من الكمبيوتر." if locked else err
     return ("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1,viewport-fit=cover'><meta name=theme-color content='#1f1e1d'>"
-            "<title>رمز الدخول · Hojas Studio</title><link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap' rel=stylesheet><style>" + LOGIN_CSS.replace("%", "%%") + "</style></head><body>"
+            "<title>رمز الدخول · Hojas Studio</title>" + LOGIN_EN.replace("%", "%%") + "<link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap' rel=stylesheet><style>" + LOGIN_CSS.replace("%", "%%") + "</style></head><body>"
             "<form class='c%s' method=get action='%s' id=f><div class=logo><svg viewBox='0 0 260 260' aria-hidden=true><rect width=150.5 height=46.8 fill=currentColor /><rect x=62.5 y=106.6 width=197.5 height=46.8 fill=currentColor /><rect y=213.2 width=103.7 height=46.8 fill=currentColor /></svg></div><h1>اكتب رمز الدخول</h1>"
             "<p>الرمز من %d أرقام، تلقاه %s.</p><div class=d id=d>%s</div><input type=hidden name=k id=k>"
             "<div class=m id=m>%s</div><button id=b%s>دخول</button>"
@@ -5927,9 +7052,30 @@ def claude_why(txt, rc=None):
     if re.search(r"enotfound|econnrefused|econnreset|getaddrinfo|network|timed? ?out|offline|socket hang up", low): return {"why": "net", "msg": "Claude ما قدر يتصل بالنت. تأكد من النت وأعد."}
     last = next((x.strip() for x in reversed(t.strip().splitlines()) if x.strip()), "")
     return {"why": "other", "msg": "Claude وقف" + (" (رمز %s)" % rc if rc not in (None, 0) else "") + (": " + last[:160] if last else ".")}
+def pid_alive(pid):
+    """4.44: هل العملية لسه شغالة؟ (ويندوز: OpenProcess، لأن os.kill هناك يقفلها بدل ما يفحصها)"""
+    try: pid = int(pid)
+    except (TypeError, ValueError): return False
+    if pid <= 0: return False
+    if os.name == "nt":
+        try:
+            import ctypes; k = ctypes.windll.kernel32; h = k.OpenProcess(0x1000, False, pid)
+            if not h: return False
+            code = ctypes.c_ulong(); ok = k.GetExitCodeProcess(h, ctypes.byref(code)); k.CloseHandle(h)
+            return bool(ok) and code.value == 259
+        except Exception: return False
+    try: os.kill(pid, 0); return True
+    except OSError: return False
+CL_RUN = []   # 4.44: انتظار Claude قبل ما تطلع العملية اللي شغّلته (وإلا ما ينكتب إنه خلص، والكرت يبقى «Claude شغّال» للأبد)
+def claude_stale(work, jb=None):
+    """Claude المسجّل على المشروع خلص أو مات؟ بالـPID لو موجود، وإلا لو سجله ساكت من 20 دقيقة."""
+    jb = jb if jb is not None else job_get(work)
+    if jb.get("cpid"): return not pid_alive(jb["cpid"])
+    lg = J(work, "claude.log"); ref = os.path.getmtime(lg) if os.path.exists(lg) else float(jb.get("at") or jb.get("t0") or 0)
+    return time.time() - ref > CL_IDLE
 def claude_spawn(work, task, label="طلب", on_done=None, on_fail=None):
     exe = find_claude()
-    task = task.replace("<engine>", find_engine(None) or "engine") + '\n\n(سياق: `hs` = `"%s" "%s"` · السكل: %s)' % (PY, os.path.abspath(__file__), HERE)
+    task = lang_hint(task.replace("<engine>", find_engine(None) or "engine") + '\n\n(سياق: `hs` = `"%s" "%s"` · السكل: %s)' % (PY, os.path.abspath(__file__), HERE))
     if not exe: return False, "ما لقيت Claude Code على الجهاز. افتح Claude Code مرة وحدة (عشان أعرف مكانه) أو قل له: " + task[:200]
     cmd = [exe, "-p", task, "--permission-mode", "acceptEdits", "--add-dir", HERE, "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep"]
     if exe.lower().endswith((".cmd", ".bat")): cmd = ["cmd", "/c"] + cmd
@@ -5940,6 +7086,10 @@ def claude_spawn(work, task, label="طلب", on_done=None, on_fail=None):
     if os.name == "nt": kw["creationflags"] = 0x08000000
     try: pr = subprocess.Popen(cmd, **kw); cid = cmd_log_add(work, label, task, None); t0 = time.time()
     except Exception as e: return False, str(e)[:200]
+    cmd_log_set(cid, pid=pr.pid)
+    if os.path.exists(job_path(work)):
+        try: job_set(work, cpid=pr.pid)
+        except Exception: pass
     def wait():
         rc = pr.wait()
         try:
@@ -5962,7 +7112,7 @@ def claude_spawn(work, task, label="طلب", on_done=None, on_fail=None):
             if on_done:
                 try: on_done()
                 except Exception: pass
-    threading.Thread(target=wait, daemon=True).start(); return True, ""
+    th = threading.Thread(target=wait, daemon=True); th.start(); CL_RUN.append(th); return True, ""
 def cmd_claude(args):
     """hs claude            وين Claude Code؟
 hs claude set <مسار>   حدد مكانه بنفسك
@@ -6371,10 +7521,11 @@ def repurpose(work, fresh=False):
     title = _unconj(" ".join(title.split()[:12]))
     pts = sorted(i for _, i in sc[:6]); points = [_unconj(S[i]["text"]) for i in pts if _unconj(S[i]["text"]) != title][:5]
     kw = keywords(full); tags = ["#" + w.replace(" ", "_") for w in kw[:5]]
-    thread = [title + "\n\nثريد:"] + ["%d. %s" % (i + 1, x) for i, x in enumerate(points)] + ["لو فادك، رتوِت أول تغريدة وتابعني لأكثر."]
+    en_ = not re.search(r"[\u0600-\u06FF]", full)   # 4.40: مقطع كلامه إنجليزي ← قوالب النشر بالإنجليزي
+    thread = [title + ("\n\nA thread:" if en_ else "\n\nثريد:")] + ["%d. %s" % (i + 1, x) for i, x in enumerate(points)] + ["If this helped, repost the first post and follow for more." if en_ else "لو فادك، رتوِت أول تغريدة وتابعني لأكثر."]
     yt_title = (title if len(title) <= 90 else title[:88] + "…")
-    desc = "\n".join([title, "", "بهالمقطع:"] + ["• " + x for x in points[:4]] + ["", " ".join(tags)])
-    R = {"ok": True, "title": title, "points": points, "cta": "احفظه عشان ترجع له، وتابعني للجاي", "thread": thread, "yt": {"title": yt_title, "desc": desc}, "tags": tags, "by": "local", "at": int(time.time())}
+    desc = "\n".join([title, "", "In this video:" if en_ else "بهالمقطع:"] + ["• " + x for x in points[:4]] + ["", " ".join(tags)])
+    R = {"ok": True, "title": title, "points": points, "cta": "Save it for later, and follow for the next one" if en_ else "احفظه عشان ترجع له، وتابعني للجاي", "thread": thread, "yt": {"title": yt_title, "desc": desc}, "tags": tags, "by": "local", "at": int(time.time())}
     wj(p, R); return R
 
 # ── سحب فيديو من رابط (تيك توك · يوتيوب · انستقرام · X · سناب …) بأداة yt-dlp المجانية ──
@@ -6485,9 +7636,34 @@ def pod_want(w, data):
     if (data or {}).get("mode") != "clips": return
     tr = str(data.get("tr") or "").strip()[:5]; dub = str(data.get("dub") or "").strip()[:5]; host = str(data.get("host", "0")) not in ("0", "false", "False", "")
     cfg = clips_cfg(w); W_ = cfg.get("want") or {}; W_.update({"tr": tr if tr in DUB_LANGS else "", "dub": dub if dub in DUB_LANGS else "", "host": host, "pod": True}); cfg["want"] = W_
+    if str(data.get("speaker") or "").strip(): W_["speaker"] = re.sub(r"\s+", " ", str(data["speaker"])).strip()[:40]   # 4.47: اسم المتكلم لهالحلقة
+    if str(data.get("study", "")) in ("1", "true", "True"): W_["study"] = True   # 4.47: Claude يدرس الحلقة كاملة قبل ما يرشّح
     if data.get("identity"): W_["identity"] = str(data["identity"])[:40]   # 4.37: هويته لكل مقاطع الحلقة
     os.makedirs(w, exist_ok=True); wj(J(w, "clips.json"), cfg)
+def ep_study_text(d, n=5, ln=None):
+    """4.47: Claude يدرس الحلقة كاملة قبل ما يرشّح (مشتركة بين تجهيز الحلقة وزر «خلّ Claude يقيّمها»)."""
+    return ("ادرس الحلقة كاملة قبل أي ترشيح: اقرأ transcript.txt من أوله لآخره (كله، مو أول جزء بس)، وطلّع محاورها والأفكار القوية فيها. بعدها:\n"
+            "- كل لقطة فكرة كاملة تنفهم لحالها بدون سياق: بداية واضحة ونهاية تقفل الفكرة، ما تبدأ بنص جملة ولا تنقطع قبل الخلاصة.\n"
+            "- تبدأ بهوك بأول 3 ثواني (سؤال، رقم، رأي جريء، قصة، موقف)، وطولها حسب المطلوب %s ثانية.\n"
+            "- لا ترشّح السلام والمقدمات والكلام العام والإعلانات والتكرار.\n"
+            "- شيل المرشّحات الضعيفة (hs clips cand %s rm <id>)، وعدّل الباقية (cand set <id> --from --to --title --hook --score --why \"سبب|سبب\")، وأضف اللحظات القوية اللي فاتت (cand add).\n"
+            "- الدرجة (0-100) حقيقية: كم تتوقع تضرب كمقطع قصير. العنوان قصير يشد، والهوك أول جملة تنقال.\n"
+            "خلّ أقوى %d مرشّح على الأقل.") % (ln or "25-75", d, int(n or 5) * 2)
 def host_cfg(): return {"on": True, "name": "", "char": "robo", "color": "#D97757", **(rj(os.path.join(HOME_CFG, "host.json"), {}) or {})}
+def ep_speaker_set(w, name):
+    """4.47: اسم المتكلم بهالحلقة: ينحفظ لها، ويتبدّل بصندوق الاسم بكل مقطع جاهز منها (فاضي = يشيل الصندوق)."""
+    nm = re.sub(r"\s+", " ", name).strip()[:40]; cfg = clips_cfg(w); W_ = cfg.get("want") or {}; W_["speaker"] = nm; cfg["want"] = W_; wj(J(w, "clips.json"), cfg); n = 0
+    for c in cfg.get("clips") or []:
+        cw = J(w, c.get("name") or "")
+        if not is_project(cw): continue
+        st = load_studio(cw); h = hs_of(st); P_ = h.get("pod") or {}; Ls = h.get("layers") or []; L = next((x for x in Ls if x.get("auto") == "name"), None)
+        if nm:
+            if L: L["text"] = nm; L.pop("off", None)
+            else:
+                du_ = float((rj(J(cw, "caps.json"), {}) or {}).get("total") or 0) or 600; h.setdefault("layers", []).append(pod_name_layer(nm, du_))
+        elif L: L["off"] = True
+        P_["speaker"] = nm; h["pod"] = P_; wj(J(cw, "studio.json"), st); n += 1
+    return n
 def host_set(**kw):
     h = host_cfg(); h.update({k: v for k, v in kw.items() if v is not None}); os.makedirs(HOME_CFG, exist_ok=True); wj(os.path.join(HOME_CFG, "host.json"), h); return h
 def grab_url(url, d, base, prog=None):
@@ -6552,10 +7728,12 @@ def job_run(d, src, mode="auto", pick="claude", n=5, ln=None, note="", lang=None
             clips_scan(lf, d, hub_cfg().get("prepModel") or "medium", lang)
             job_set(d, stage="suggest"); clips_suggest(d, n, ln, note, count=int(n or 5) * 2 if pick == "me" else None)
             C = clips_cfg(d).get("cands") or []
+            study_ = ep_study_text(d, n, ln)
             if pick == "claude":
                 task = ("حلقة طويلة جاهزة بمجلد %s (التفريغ: transcript.txt، والمرشّحات: hs clips cand %s list).\n"
                         "1) اقرأ النص كامل وقيّم المرشّحات كمحرّر محتوى قصير: الهوك بأول 3 ثواني، فكرة مكتملة، مشاعر أو رقم أو رأي جريء. عدّل الدرجات والأسباب (cand set) وأضف أي لحظة أقوى فاتت (cand add) واكتب لكل وحدة عنوان قصير.\n"
                         "2) اختر أقوى %d وسوّها: hs clips build %s --picks <ids> --edit none\n3) منتج كل مقطع حسب references/clips.md." % (d, d, int(n or 5), d))
+                task = task.replace("1) اقرأ النص كامل و", "1) " + study_ + "\nبعدها ")   # 4.47: يدرس الحلقة كاملة قبل ما يختار
                 if note: task += "\nطلب المستخدم: " + note
                 def fallback(w=None, C=C):   # بدون Claude أو وقف: ناخذ الأعلى ونجهّزها للتعديل اليدوي
                     if any(c.get("made") for c in clips_cfg(d).get("cands") or []): job_set(d, stage="done", done=True); return
@@ -6567,8 +7745,13 @@ def job_run(d, src, mode="auto", pick="claude", n=5, ln=None, note="", lang=None
                 task = ("حلقة طويلة بمجلد %s والمستخدم بيختار اللقطات بنفسه من المكتبة. لا تقص ولا تمنتج شي.\n"
                         "اقرأ transcript.txt والمرشّحات (hs clips cand %s list) وقيّم كل وحدة كم يتوقع تضرب (0-100) مع سبب قصير وعنوان، وعدّل البداية والنهاية عشان تبدأ بهوك وتنتهي بفكرة كاملة (cand set)، وأضف أقوى لحظات فاتت (cand add)." % (d, d))
                 if note: task += "\nطلب المستخدم: " + note
-                ok, _ = claude_spawn(d, task, "تقييم اللقطات") if hub_cfg().get("rankWithClaude", False) and have_claude() else (False, "")
-                job_set(d, stage="pick", ranking=ok, done=True)
+                want_s = (clips_cfg(d).get("want") or {}).get("study") or hub_cfg().get("rankWithClaude", False)
+                if want_s and have_claude():   # 4.47: Claude يدرس الحلقة كاملة، والحلقة تبقى «يدرسها» لين يخلص، وبعدها تطلع لك جاهزة
+                    task = ("حلقة طويلة بمجلد %s والمستخدم بيختار اللقطات بنفسه من المكتبة. لا تقص ولا تمنتج شي، رشّح بس.\n" % d) + study_ + ("\nطلب المستخدم: " + note if note else "")
+                    done_ = lambda: job_set(d, stage="pick", ranking=False, done=True)
+                    ok, _ = claude_spawn(d, task, "Claude يدرس الحلقة", on_done=done_, on_fail=lambda w=None: done_())
+                    job_set(d, stage="claude" if ok else "pick", ranking=ok, done=True)
+                else: job_set(d, stage="pick", ranking=False, done=True)
             return d
         sm = J(d, "src.mov")
         if os.path.abspath(f) != os.path.abspath(sm): (shutil.move if os.path.dirname(os.path.abspath(f)) == os.path.abspath(d) else shutil.copy2)(f, sm)
@@ -6578,8 +7761,11 @@ def job_run(d, src, mode="auto", pick="claude", n=5, ln=None, note="", lang=None
         if style: hs_of(st)["wantStyle"] = style   # 4.37: «موشن جرافيك» من المكتبة
         if ident: hs_of(st)["identity"] = ident   # 4.37: هويته («none» = بدون)
         wj(J(d, "studio.json"), st)
+        try: color_grade_apply(d)   # 4.43: الطابع اللي اختاره بنافذة المقطع الجديد
+        except Exception: pass
         projects_remember(d)
         if mode == "manual":
+            st = load_studio(d); hs_of(st)["guide"] = 1; wj(J(d, "studio.json"), st)   # 4.43: يفتح الاستوديو على الخطوات (الجمل أول)
             job_set(d, stage="prep"); prep(d, lang=lang)
             try: ident_apply(d)   # 4.37: يفتح الاستوديو بألوان هويته وخطوطها
             except Exception: pass
@@ -6622,6 +7808,7 @@ def cmd_grab(args):
         if "NEED_YTDLP" in m: sys.exit("أداة السحب yt-dlp مو مثبّتة. استأذن المستخدم أول، ثم: %s -m pip install -U yt-dlp" % PY)
         if "NEED_COOKIES" in m: sys.exit("الموقع يبي تسجيل دخول. سجّل دخولك بالمتصفح ثم: python hs.py hub --cookies chrome (أو edge/firefox) وأعد. التفاصيل: " + m)
         sys.exit(m)
+    for th_ in list(CL_RUN): th_.join()   # 4.44: نخلي Claude يكمّل وينكتب إنه خلص
     j = job_get(d); print("جاهز:", d, "·", j.get("stage"))
     if j.get("mode") == "clips": print("المرشّحات: hs clips cand %s list" % d)
 def cmd_prep(work, args):
@@ -6685,6 +7872,27 @@ def projects_remember(work):
         reg = [x for x in reg if os.path.normcase(x) != os.path.normcase(w)]; reg.insert(0, w); wj(projects_reg_path(), reg[:200])
     except Exception: pass
 def cmds_path(): return os.path.join(HOME_CFG, "commands.json")
+def folders_path(): return os.path.join(HOME_CFG, "folders.json")
+def folders_load():
+    L = rj(folders_path(), []) or []
+    return [f for f in L if isinstance(f, dict) and f.get("id") and f.get("name")]
+def folders_act(data):
+    """4.44: مجلدات بالمكتبة: مجلد جديد، تسمية، حذف (المقاطع تبقى)، ونقل مقطع لمجلد أو برّاه."""
+    L = folders_load(); act = str(data.get("act") or ""); fid = str(data.get("folder") or "")
+    if act == "new":
+        nm = str(data.get("name") or "").strip()[:60]
+        if not nm: raise ValueError("اكتب اسم المجلد")
+        fid = "f%d" % int(time.time() * 1000); L.append({"id": fid, "name": nm, "items": []})
+    elif act == "rename":
+        for f in L:
+            if f["id"] == fid: f["name"] = str(data.get("name") or f["name"]).strip()[:60] or f["name"]
+    elif act == "del": L = [f for f in L if f["id"] != fid]
+    elif act == "move":
+        pid = str(data.get("id") or "")
+        for f in L: f["items"] = [x for x in f.get("items") or [] if x != pid]
+        for f in L:
+            if f["id"] == fid: f["items"].append(pid)
+    os.makedirs(HOME_CFG, exist_ok=True); wj(folders_path(), L); return L, fid
 def cmd_log_add(work, label, task, snap):
     try:
         os.makedirs(HOME_CFG, exist_ok=True); L = rj(cmds_path(), []) or []; cid = "c%d" % int(time.time() * 1000)
@@ -6718,9 +7926,13 @@ def is_ep(d): return os.path.isdir(d) and os.path.exists(os.path.join(d, "clips.
 def ep_card(d):
     cfg = clips_cfg(d); jb = job_get(d); so = rj(J(d, "source.json"), {}) or {}; C = cfg.get("cands") or []; made = cfg.get("clips") or []
     stg = jb.get("stage") or ("pick" if C else "transcribe"); err = jb.get("err")
+    if stg == "claude" and claude_stale(d, jb):   # 4.44: Claude خلص بس ما انكتب (العملية اللي شغّلته طلعت قبله)
+        stg = "done"
+        try: job_set(d, stage="done", done=True)
+        except Exception: pass
     if stg == "error": state, sub = "err", "وقف: " + (err or "")[:90]
     elif stg in ("grab", "transcribe", "suggest", "build"): state, sub = "work", {"grab": "يسحب الفيديو", "transcribe": "يفرّغ الكلام", "suggest": "يرشّح اللقطات", "build": "يقص اللقطات"}[stg]
-    elif stg == "claude" and not jb.get("claudeErr"): state, sub = "work", "Claude يختار ويمنتج"
+    elif stg == "claude" and not jb.get("claudeErr"): state, sub = "work", "Claude يدرس الحلقة ويرشّح" if jb.get("ranking") else "Claude يختار ويمنتج"
     elif made: state, sub = "ready", "%d مقطع جاهز · %d مرشّح" % (len(made), len(C))
     else: state, sub = "wait", "اختر لقطاتك (%d مرشّح)" % len(C)
     return {"kind": "ep", "id": hashlib.md5(os.path.normcase(os.path.abspath(d)).encode()).hexdigest()[:10], "work": os.path.abspath(d), "name": os.path.basename(d.rstrip("/\\")),
@@ -7384,6 +8596,7 @@ def hub_serve(root, port):
                 f = ui_font()
                 return self._send(200, open(f, "rb").read(), "font/otf", {"Cache-Control": "max-age=604800"}) if os.path.isfile(f) else self._send(404, b"")
             if p == "/hub/qr.js": return self._send(200, open(os.path.join(HERE, "qr.js"), "rb").read(), "application/javascript; charset=utf-8", {"Cache-Control": "max-age=86400"})
+            if p == "/hub/i18n.js": return self._send(200, open(os.path.join(HERE, "i18n.js"), "rb").read(), "application/javascript; charset=utf-8", {"Cache-Control": "no-cache"})   # 4.40: ترجمة رسائل السيرفر
             if p.startswith("/hub/api/"): return self._api(p[9:], q)
             if p in ("/hub/manifest.json", "/manifest.json"):
                 return self._send(200, json.dumps({"name": "Hojas Studio", "short_name": "Hojas", "start_url": "/library", "display": "standalone", "background_color": "#0a0c11", "theme_color": "#0a0c11", "dir": "rtl", "lang": "ar",
@@ -7432,17 +8645,18 @@ def hub_serve(root, port):
             except (BrokenPipeError, ConnectionResetError): pass
         def do_HEAD(self): self.do_GET()
         def do_POST(self):
+            lang_from(self)
             try: self._route()
             except (BrokenPipeError, ConnectionResetError): pass
         def _api(self, a, q):
-            if self.command == "POST" and a not in ("upload", "identity_file"):
+            if self.command == "POST" and a not in ("upload", "identity_file", "lut"):
                 try: data = json.loads(self._body() or b"{}")
                 except Exception: data = {}
             else: data = {}
             if a == "projects":
                 cards = [proj_card(w, live=True) for w in hub_projects(root)]; cards.sort(key=lambda c: -c["mt"])
                 eps = hub_eps(root); eps.sort(key=lambda c: -c["mt"])
-                return self._json(200, {"root": root, "projects": cards, "eps": eps, "awake": AWAKE["on"], "battery": battery(), "ytdlp": bool(ytdlp_cmd()), "claude": have_claude(), "claudeErr": claude_last_err(), "tokenAsk": token_ask(), "factory": factory_state()})
+                return self._json(200, {"root": root, "projects": cards, "eps": eps, "folders": folders_load(), "awake": AWAKE["on"], "battery": battery(), "ytdlp": bool(ytdlp_cmd()), "claude": have_claude(), "claudeErr": claude_last_err(), "tokenAsk": token_ask(), "factory": factory_state()})
             if a == "search":
                 qq = (q.get("q") or [""])[0].strip()
                 if len(qq) < 2: return self._json(200, {"q": qq, "items": []})
@@ -7475,6 +8689,30 @@ def hub_serve(root, port):
                         except Exception as e: return self._json(400, {"ok": False, "msg": str(e)[:160]})
                         return self._json(200, {"ok": True, "slug": I_["slug"], "list": ident_list(), "default": ident_default()})
                 return self._json(200, {"ok": True, "list": ident_list(), "default": ident_default()})
+            if a == "folders":   # 4.44: مجلدات المقاطع
+                if self.command != "POST": return self._json(200, {"ok": True, "folders": folders_load()})
+                try: L_, fid_ = folders_act(data)
+                except ValueError as e: return self._json(400, {"ok": False, "msg": str(e)})
+                return self._json(200, {"ok": True, "folders": L_, "id": fid_})
+            if a == "lut":   # 4.43: ملف LUT (.cube) من جهازه ينحفظ بمكتبة الألوان ويرجع يستخدمه
+                if self.command != "POST": return self._json(200, {"ok": True, "list": lut_list()})
+                try: nm = lut_save((q.get("name") or [""])[0], self._body())
+                except ValueError as e: return self._json(400, {"ok": False, "msg": str(e)})
+                return self._json(200, {"ok": True, "name": nm, "list": lut_list()})
+            if a == "lut_file":
+                p = os.path.join(LUT_DIR, lut_safe((q.get("name") or [""])[0]) + ".cube")
+                if not os.path.isfile(p): return self._json(404, {"ok": False})
+                return self._send(200, open(p, "rb").read(), "text/plain; charset=utf-8")
+            if a == "prep":   # 4.43: شاشة التجهيز بعد «ابدأ التجهيز»: وين وصل، ومتى يفتح الاستوديو
+                w = card_by((q.get("id") or [""])[0])
+                if not w: return self._json(200, {"ok": True, "wait": True})
+                pr = prep_state(w)
+                if pr.get("stage") == "transcribe":   # تقدّم التفريغ الحقيقي من شريط whisper بسجله
+                    try:
+                        with open(J(w, "whisper.log"), "rb") as f_: f_.seek(0, 2); f_.seek(max(0, f_.tell() - 600)); m_ = re.findall(r"(\d+)/(\d+) \[", f_.read().decode("utf-8", "ignore"))
+                        if m_: pr["frac"] = round(int(m_[-1][0]) / max(1, int(m_[-1][1])), 3)
+                    except OSError: pass
+                return self._json(200, {"ok": True, "job": job_get(w), "prep": pr, "ready": ready(w)})
             if a == "identity_file":
                 try: rel = ident_add_file((q.get("name") or ["هويتي"])[0] or "هويتي", (q.get("file") or ["file"])[0], self._body())
                 except ValueError as e: return self._json(400, {"ok": False, "msg": str(e)})
@@ -7556,10 +8794,16 @@ def hub_serve(root, port):
                 cfg = clips_cfg(w); A = rj(J(w, "long.json"), {}) or {}; made = []
                 for c in cfg.get("clips") or []:
                     cw = J(w, c["name"]); made.append({**c, "pid": hashlib.md5(os.path.normcase(cw).encode()).hexdigest()[:10], "card": proj_card(cw) if is_project(cw) else None})
-                return self._json(200, {"ok": True, "card": ep_card(w), "cands": cfg.get("cands") or [], "clips": made, "want": cfg.get("want") or {}, "lang": cfg.get("lang"),
-                                        "segs": [[round(x["start"], 2), round(x["end"], 2), x["text"].strip()] for x in A.get("segments") or []],
+                cands_ = [{**c, **{k_: title_clean(c[k_]) for k_ in ("title", "hook", "text") if c.get(k_)}} for c in cfg.get("cands") or []]   # 4.47: بدون &gt;&gt; من ترجمة يوتيوب
+                return self._json(200, {"ok": True, "card": ep_card(w), "cands": cands_, "clips": made, "want": cfg.get("want") or {}, "lang": cfg.get("lang"),
+                                        "speaker": (cfg.get("want") or {}).get("speaker", pod_speaker(cfg.get("title") or "")),
+                                        "segs": [[round(x["start"], 2), round(x["end"], 2), title_clean(x["text"])] for x in A.get("segments") or []],
                                         "preview": ".hs/preview.mp4" if os.path.exists(J(w, ".hs", "preview.mp4")) else None, "ranking": bool(job_get(w).get("ranking")), "claude": have_claude(),
                                         "remote": cfg.get("remote") if not (cfg.get("src") and os.path.isfile(cfg.get("src") or "")) else None, "vid": cfg.get("vid"), "host": host_cfg()})
+            if a == "ep_speaker":   # 4.47: اسم المتكلم لهالحلقة بس (مو ثابت لكل البودكاست)، وينطبق على مقاطعها الجاهزة بعد
+                w = card_by(data.get("id", ""))
+                if not w or not is_ep(w): return self._json(404, {"ok": False})
+                return self._json(200, {"ok": True, "n": ep_speaker_set(w, str(data.get("name") or ""))})
             if a == "ep_build":
                 w = card_by(data.get("id", ""))
                 if not w or not is_ep(w): return self._json(404, {"ok": False})
@@ -7601,8 +8845,9 @@ def hub_serve(root, port):
                 w = card_by(data.get("id", ""))
                 if not w or not is_ep(w): return self._json(404, {"ok": False})
                 note = (clips_cfg(w).get("want") or {}).get("note") or ""
-                task = ("حلقة طويلة بمجلد %s والمستخدم بيختار اللقطات بنفسه. لا تقص ولا تمنتج شي.\nاقرأ transcript.txt والمرشّحات (hs clips cand %s list) وقيّم كل وحدة كم يتوقع تضرب (0-100) مع سبب قصير وعنوان (cand set)، وعدّل البداية والنهاية عشان تبدأ بهوك وتنتهي بفكرة كاملة، وأضف أقوى لحظات فاتت (cand add).\nأهم قاعدة: المعنى كامل. اقرأ النص قبل كل مرشّح وبعده بـ transcript.txt: لو يبدأ بنص قصة أو يرد على شي انقال قبل (مثل جواب لغز بدون اللغز، أو «هذا» و«اياه» بدون ما ينعرف وش هي)، رجّع بدايته لأول القصة؛ ولو الكلام ما خلص، طوّل نهايته لين تخلص الفكرة، حتى لو صار أطول من اللي طلبه. ولو الفكرة كاملة أطول من ضعف اللي طلبه، احذفه (cand rm) ولا تقصه بنصه." % (w, w)) + (("\nطلب المستخدم: " + note) if note else "")
-                ok, msg = claude_spawn(w, task, "تقييم اللقطات"); job_set(w, ranking=ok); return self._json(200, {"ok": ok, "msg": msg})
+                W_ = clips_cfg(w).get("want") or {}
+                task = ("حلقة طويلة بمجلد %s والمستخدم بيختار اللقطات بنفسه. لا تقص ولا تمنتج شي، رشّح بس.\n" % w) + ep_study_text(w, W_.get("n") or 5, W_.get("len")) + ("\nطلب المستخدم: " + note if note else "")
+                ok, msg = claude_spawn(w, task, "Claude يدرس الحلقة", on_done=lambda: job_set(w, ranking=False), on_fail=lambda x=None: job_set(w, ranking=False)); job_set(w, ranking=ok); return self._json(200, {"ok": ok, "msg": msg})
             if a == "retry":
                 w = card_by(data.get("id", ""))
                 if not w: return self._json(404, {"ok": False})
@@ -7649,7 +8894,12 @@ def hub_serve(root, port):
                 projects_remember(w)
                 return self._json(200, {"ok": True, "url": "/m" if data.get("mobile") else "/"}, {"Set-Cookie": "hs_p=%d; Path=/; SameSite=Lax" % pt})
             if a == "commands":
-                L = rj(cmds_path(), []) or []; out = []
+                L = rj(cmds_path(), []) or []; out = []; fix_ = False
+                for x in L[:80]:   # 4.44: طلب «شغّال» وعمليته ماتت أو قديم: خلص
+                    if x.get("status") == "running" and ((x.get("pid") and not pid_alive(x["pid"])) or (not x.get("pid") and time.time() - float(x.get("at") or 0) > 3 * 3600)): x["status"] = "done"; fix_ = True
+                if fix_:
+                    try: wj(cmds_path(), L)
+                    except Exception: pass
                 for x in L[:80]:
                     w = x.get("work", ""); c = {"work": w, "id": hashlib.md5(os.path.normcase(w).encode()).hexdigest()[:10]}
                     out.append({**x, "pid": c["id"], "title": proj_card(w)["title"] if is_project(w) else os.path.basename(w), "thumb": proj_card(w)["thumb"] if is_project(w) else None})
@@ -7722,9 +8972,11 @@ def hub_serve(root, port):
                         f.write(ch); left -= len(ch)
                 note = (q.get("note") or [""])[0][:1500]; mode = (q.get("mode") or ["clips" if kind == "long" else "manual"])[0]
                 idq = (q.get("identity") or [""])[0][:40]
-                pod_want(w, {"mode": mode, "tr": (q.get("tr") or [""])[0], "dub": (q.get("dub") or [""])[0], "host": (q.get("host") or ["1"])[0], "identity": idq})
+                if mode0 != "clips" and ((q.get("grade") or [""])[0] or (q.get("lut") or [""])[0] or (q.get("log") or ["0"])[0] == "1"):   # 4.43: الألوان من النافذة
+                    color_set(w, (q.get("grade") or ["none"])[0], (q.get("log") or ["0"])[0] == "1", (q.get("lut") or [""])[0])
+                pod_want(w, {"mode": mode, "tr": (q.get("tr") or [""])[0], "dub": (q.get("dub") or [""])[0], "host": (q.get("host") or ["1"])[0], "identity": idq, "speaker": (q.get("speaker") or [""])[0][:40], "study": (q.get("study") or [""])[0]})
                 grab_bg(dst, w, {"mode": mode, "pick": (q.get("pick") or ["me"])[0], "n": (q.get("n") or ["5"])[0], "len": (q.get("len") or [""])[0], "note": note, "identity": idq})
-                return self._json(200, {"ok": True, "work": w, "started": True, "msg": ""})
+                return self._json(200, {"ok": True, "work": w, "id": hashlib.md5(os.path.normcase(os.path.abspath(w)).encode()).hexdigest()[:10], "started": True, "msg": ""})
             return self._json(404, {"ok": False})
     def db_loop():   # 4.4: يحدّث قاعدة البيانات بالخلفية (بس المقاطع اللي تغيّرت)
         while True:
@@ -7834,6 +9086,7 @@ def main():
     elif cmd == "set": cmd_set(work, rest)
     elif cmd == "layer": cmd_layer(work, rest)
     elif cmd == "kf": cmd_kf(work, rest)   # 4.29
+    elif cmd == "key": cmd_key(work, rest)   # 4.39
     elif cmd == "hook": cmd_hook(work, rest)
     elif cmd == "check": cmd_check(work)
     elif cmd == "retention":   # 4.5: فحص قبل النشر
@@ -7847,6 +9100,7 @@ def main():
     elif cmd == "media": cmd_media(work, rest)
     elif cmd == "sfx": cmd_sfx(work, rest)
     elif cmd == "bleep": cmd_bleep(work, rest)
+    elif cmd == "emoji": cmd_emoji(work, rest)   # 4.48
     elif cmd == "face":
         try: os.remove(J(work, "face.json"))
         except OSError: pass
@@ -7884,6 +9138,27 @@ def main():
         if rest[0] == "preview": print(quality_preview(work, float(rest[1]) if len(rest) > 1 else 3.0, rest[2] if len(rest) > 2 else "light")); return
         if rest[0] not in ENH_LEVELS: sys.exit("quality <work> off | light | strong | preview <ثانية> [light|strong]")
         st_ = load_studio(work); hs_of(st_)["enhance"] = {"level": rest[0]}; wj(J(work, "studio.json"), st_); vfr_extract(work, print, rest[0]); print("تم. الفريمات صارت بالتحسين (%s)، والتصدير بياخذها" % rest[0])
+    elif cmd == "stab":   # 4.40: تثبيت الصورة
+        NM = {"off": "مطفي", "light": "خفيف", "strong": "قوي", "ok": "ثابتة"}
+        if not rest or rest[0] == "status":
+            I = stab_info(work); print("التثبيت: " + NM[stab_level(work)] + (" · آخر فحص: الاهتزاز %.1f بكسل (%s)" % (I["jitter"], NM[I["level"]]) if I else " · ما انفحص بعد (hs stab <work> check)")); return
+        if rest[0] == "check":
+            I = stab_analyze(work, print, True); print("الاهتزاز: %.1f بكسل على عرض 1080 · %s" % (I["jitter"], {"ok": "الصورة ثابتة، ما تحتاج تثبيت", "light": "اهتزاز خفيف، ينفع «خفيف»", "strong": "اهتزاز واضح، ثبّتها «قوي»"}[I["level"]])); return
+        if rest[0] == "preview": print(stab_preview(work, float(rest[1]) if len(rest) > 1 else 0.0, rest[2] if len(rest) > 2 else "light")); return
+        if rest[0] == "auto":
+            I = stab_analyze(work, print); rest = ["off" if I["level"] == "ok" else I["level"]]; print("الاهتزاز %.1f بكسل ← %s" % (I["jitter"], NM[rest[0]]))
+        if rest[0] not in STAB_LEVELS: sys.exit("stab <work> status | check | auto | off | light | strong | preview <ثانية> [light|strong]")
+        st_ = load_studio(work); hs_of(st_)["stab"] = {"level": rest[0]}; wj(J(work, "studio.json"), st_); vfr_extract(work, print); print("تم. التثبيت: %s، والتصدير بياخذه" % NM[rest[0]])
+    elif cmd == "hdr":   # 4.41: ألوان الآيفون (HDR ← SDR)
+        NM = {"auto": "تلقائي", "on": "دايم", "off": "مطفي"}
+        I = hdr_info(work); KN = {"hlg": "HDR (HLG، الآيفون غالباً)", "pq": "HDR (PQ، HDR10)", None: "عادي (SDR)"}
+        if not rest or rest[0] in ("status", "check"):
+            print("الفيديو الأصلي: %s%s · الفريمات: %s · الإعداد: %s" % (KN[I["src"]], " · انحوّل بمحوّل أبل" if I["apple"] else "", ("ألوانها باهتة، تحتاج تصليح" if I["washed"] else ("مصلّحة" if I["applied"] else ("ما تحتاج" if not I["kind"] else "بتتصلّح أول ما تطلع"))), NM[I["level"]])); return
+        if rest[0] == "preview": print(hdr_preview(work, float(rest[1]) if len(rest) > 1 else 1.0, "on")); return
+        if rest[0] not in HDR_LEVELS: sys.exit("hdr <work> status | auto | on | off | preview <ثانية>")
+        st_ = load_studio(work); hs_of(st_)["hdr"] = {"level": rest[0]}; wj(J(work, "studio.json"), st_)
+        if rest[0] == "auto" and not I["kind"] and not I["applied"]: print("الفيديو عادي (SDR)، ما يحتاج تصليح"); return
+        vfr_extract(work, print); print("تم. ألوان الفيديو: %s%s، والتصدير بياخذها" % (NM[rest[0]], (" (" + KN[I["kind"] or "hlg"] + ")") if hdr_filter(work) else ""))
     elif cmd == "media":   # 4.23: الفيديو مبني من أي قص، و fresh يبنيه على آخر قص
         ok_, vm_ = media_map(work)
         if rest[:1] == ["fresh"]:

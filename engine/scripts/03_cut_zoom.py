@@ -111,8 +111,9 @@ def _hdr_to_sdr(src):
     if ct not in ("arib-std-b67","smpte2084"): return src
     here=os.path.dirname(os.path.abspath(__file__)); binp=os.path.join(here,"hdr2sdr")
     if not os.path.exists(binp):
-        r=subprocess.run(["swiftc","-O","-o",binp,os.path.join(here,"hdr2sdr.swift")],capture_output=True)
-        if r.returncode!=0: print("⚠️ الفيديو HDR وما قدرت أبني محوّل أبل (يحتاج أدوات Xcode) — الألوان قد تختلف"); return src
+        try: r=subprocess.run(["swiftc","-O","-o",binp,os.path.join(here,"hdr2sdr.swift")],capture_output=True)
+        except OSError: r=None   # 4.41: ويندوز ولينكس ما فيها swiftc، كان القص يطيح كامل. الألوان تتصلّح بعدين بـ«hs hdr» على الفريمات
+        if r is None or r.returncode!=0: print("⚠️ الفيديو HDR وما فيه محوّل أبل هنا. الألوان تتصلّح على الفريمات (hs hdr <work> auto)"); return src
     out=os.path.join(W,"src_sdr.mov")
     if not os.path.exists(out):
         print("🎨 الفيديو HDR — أحوّله SDR بمحوّل أبل حتى تبقى الألوان مثل الجوال…")

@@ -3,13 +3,13 @@
    تقرأ studio.json ← hs  وتتحكم بالكابشن كامل (خط · وزن · حجم · ألوان · مكان · عرض السطر) + سطر الترجمة.
    لو hs.cap.on مو true  ← المحرّك الأصلي يرسم كابشنه كما هو (صفر أثر). */
 (function(){
-  if(window.__hsExt) return; window.__hsExt='4.36';
+  if(window.__hsExt) return; window.__hsExt='4.48';
   const GF={ /* خطوط قوقل والأوزان المتوفرة فعلاً لكل خط */
     'Cairo':[400,500,600,700,800,900],'Tajawal':[400,500,700,800,900],'IBM Plex Sans Arabic':[400,500,600,700],
     'Alexandria':[400,500,600,700,800,900],'El Messiri':[400,500,600,700],'Noto Sans Arabic':[400,500,600,700,800,900],
     'Noto Kufi Arabic':[400,500,600,700,800,900],'Readex Pro':[400,500,600,700],'Almarai':[400,700,800],
     'Changa':[400,500,600,700,800],'Rubik':[400,500,600,700,800,900],'Aref Ruqaa':[400,700],'Lalezar':[400],
-    'Reem Kufi':[400,500,600,700],'Amiri':[400,700],'Marhey':[400,500,600,700],'Baloo Bhaijaan 2':[400,500,600,700,800],
+    'Reem Kufi':[400,500,600,700],'Amiri':[400,700],'Baloo Bhaijaan 2':[400,500,600,700,800],
     'Lemonada':[400,500,600,700],'Noto Naskh Arabic':[400,500,600,700],'Markazi Text':[400,500,600,700],
     'Inter':[400,500,600,700,800,900],'Poppins':[400,500,600,700,800,900],'Montserrat':[400,500,600,700,800,900],
     'Bebas Neue':[400],'Oswald':[400,500,600,700],'Space Grotesk':[400,500,600,700],
@@ -86,6 +86,13 @@
     if(G){ this.restore(); if(G.tint){ this.save(); this.globalCompositeOperation='soft-light'; this.globalAlpha=Math.min(1,G.tint[1]*3); this.fillStyle=G.tint[0]; this.fillRect(a[5],a[6],a[7],a[8]); this.restore(); } }
     if(main){ try{ personPass(u,sw,shh); }catch(e){ if(!window.__hsPE){ window.__hsPE=1; console.error('hs person: '+e.message); } } }
     return r; };
+  /* 4.44: إضاءة موضعية (Power Window): بيضاوي ناعم الأطراف، داخله يفتح أو يدفى، وبرّاه يغمق. على الوجه لحاله لو follow */
+  function winPass(C,dx,dy,dw,dh){ const W=HSX.win, f=W.follow?faceAt(TNOW):null, cx=dx+dw*(f?f[1]:(W.x==null?0.5:+W.x)), cy=dy+dh*(f?f[2]:(W.y==null?0.42:+W.y)), r=dw*(W.r==null?0.42:+W.r), fe=cl(W.f==null?0.45:+W.f,0.05,0.95), asp=W.asp==null?1.35:+W.asp, inn=W.in==null?0.12:+W.in, out=W.out==null?-0.45:+W.out;
+    C.save(); C.beginPath(); C.rect(dx,dy,dw,dh); C.clip(); C.translate(cx,cy); C.scale(1,asp);
+    const R=Math.max(dw,dh)*2;
+    if(Math.abs(out)>0.005){ const g=C.createRadialGradient(0,0,r*(1-fe),0,0,r*(1+fe)); const c=out<0?'0,0,0':'255,255,255'; g.addColorStop(0,'rgba('+c+',0)'); g.addColorStop(1,'rgba('+c+','+Math.min(0.95,Math.abs(out))+')'); C.fillStyle=g; C.fillRect(-R,-R,2*R,2*R); }
+    if(Math.abs(inn)>0.005){ C.globalCompositeOperation=inn>0?'soft-light':'multiply'; const g=C.createRadialGradient(0,0,0,0,0,r); const c=inn>0?(W.warm?'255,214,170':'255,255,255'):'0,0,0'; g.addColorStop(0,'rgba('+c+','+Math.min(0.9,Math.abs(inn)*1.6)+')'); g.addColorStop(1,'rgba('+c+',0)'); C.fillStyle=g; C.fillRect(-R,-R,2*R,2*R); }
+    C.restore(); }
   /* الشخص فوق خلفية جديدة (type=bg) أو فوق نص يمر وراه (type=behind). ينرسم داخل قص كرت الفيديو نفسه فيتحرك معه */
   function personPass(u,sw,shh){ const t=TNOW, Ls=(HSX.layers||[]).filter(L=>!L.off&&(L.type==='bg'||L.type==='behind')&&t>=L.s&&t<L.e); if(!Ls.length) return; const mk=FR.mask, fr=FR.cur; if(!mk||!fr) return;
     const sx=u[1], sy=u[2], cw=u[3], ch=u[4], dx=u[5], dy=u[6], dw=u[7], dh=u[8], kx=fr.naturalWidth/sw, ky=fr.naturalHeight/shh, mx=mk.naturalWidth/sw, my=mk.naturalHeight/shh;
@@ -156,6 +163,73 @@
   window.hsLoadFont=loadFont;
 
   const cardKey=c=>c.w.map(w=>w.t).join(' ');
+  /* 4.48: إيموجي الكابشن: إيموجي يطلع فوق الكلمة لما تنقال (مثل Submagic وCaptions). القاموس والاختيار هنا، ونفس المنطق بـ hs.py (hs emoji list) */
+  /*EMOCORE{*/
+  const EMO_DICT=/*EMOJSON*/{
+"فلوس":"💰","اموال":"💰","ريال":"💵","ريالات":"💵","دولار":"💵","راتب":"💵","رواتب":"💵","ربح":"📈","ارباح":"📈","خساره":"📉","خسائر":"📉","تجاره":"💼","بزنس":"💼","شركه":"🏢",
+"شركات":"🏢","مشروع":"🚀","مشاريع":"🚀","استثمار":"📈","سهم":"📈","اسهم":"📈","بنك":"🏦","سعر":"🏷️","اسعار":"🏷️","رخيص":"🏷️","غالي":"💸","مليون":"💰","ملايين":"💰","مليار":"💰",
+"ثروه":"💎","غني":"💎","اغنياء":"💎","عميل":"🤝","عملاء":"🤝","صفقه":"🤝","تسويق":"📣","اعلان":"📣","اعلانات":"📣","مبيعات":"📊","متجر":"🛍️","منتج":"📦","منتجات":"📦","شحن":"🚚",
+"ديون":"💸","دين":"💸","توفير":"🐷","ادخار":"🐷","ميزانيه":"📊","وظيفه":"💼","وظايف":"💼","دوام":"💼","مدير":"👔","موظف":"👔","موظفين":"👔","ذكاء":"🧠","اصطناعي":"🤖","روبوت":"🤖",
+"تطبيق":"📱","تطبيقات":"📱","جوال":"📱","جوالات":"📱","ايفون":"📱","كمبيوتر":"💻","لابتوب":"💻","برنامج":"💻","برامج":"💻","موقع":"🌐","انترنت":"🌐","كود":"💻","برمجه":"💻","بيانات":"📊",
+"كاميرا":"📷","تصوير":"📸","صوره":"📸","صور":"📸","فيديو":"🎬","مونتاج":"🎬","محتوي":"🎥","يوتيوب":"▶️","صوت":"🎙️","مايك":"🎙️","بودكاست":"🎙️","لعبه":"🎮","العاب":"🎮","قيمز":"🎮",
+"شاشه":"🖥️","تقنيه":"⚙️","اداه":"🛠️","ادوات":"🛠️","بطاريه":"🔋","شاحن":"🔌","ايميل":"📧","رساله":"✉️","رسايل":"✉️","رسائل":"✉️","اشعار":"🔔","اشعارات":"🔔","حب":"❤️","احب":"❤️",
+"احبك":"❤️","قلب":"❤️","سعيد":"😄","سعاده":"😄","فرح":"😄","فرحان":"😄","ضحك":"😂","يضحك":"😂","مضحك":"😂","حزين":"😢","حزن":"😢","زعلان":"😔","خوف":"😨","خايف":"😨",
+"صدمه":"😱","مصدوم":"😱","غضب":"😡","معصب":"😡","ملل":"🥱","طفش":"🥱","تعب":"😩","تعبان":"😩","نوم":"😴","نايم":"😴","حماس":"🔥","متحمس":"🤩","مفاجاه":"😮","عجيب":"🤯",
+"غريب":"🤔","سؤال":"❓","اسئله":"❓","فكره":"💡","افكار":"💡","سر":"🤫","اسرار":"🤫","نصيحه":"💡","نصايح":"💡","نصائح":"💡","تحذير":"⚠️","خطر":"⚠️","خطير":"🔥","انتبه":"⚠️",
+"انتبهوا":"⚠️","غلط":"❌","اغلاط":"❌","خطا":"❌","اخطاء":"❌","صحيح":"✅","نجاح":"🏆","ناجح":"🏆","فوز":"🏆","فشل":"📉","هدف":"🎯","اهداف":"🎯","حلم":"✨","احلام":"✨",
+"قوه":"💪","قوي":"💪","تمرين":"💪","تمارين":"💪","رياضه":"🏃","جيم":"🏋️","نادي":"🏋️","رهيب":"🔥","ممتاز":"👌","جميل":"😍","روعه":"😍","حلو":"👌","سهل":"👌","صعب":"😤",
+"مستحيل":"🚫","ممنوع":"🚫","افضل":"🏆","احسن":"🏆","اسوا":"👎","كفو":"👏","ابداع":"👏","مبدع":"👏","تصفيق":"👏","شكرا":"🙏","مبروك":"🎉","احتفال":"🎉","عيد":"🎉","هديه":"🎁",
+"هدايا":"🎁","مفتاح":"🔑","حل":"🔑","حلول":"🔑","مشكله":"🧩","مشاكل":"🧩","سلاح":"⚔️","معركه":"⚔️","تحدي":"🔥","قرار":"⚖️","فرصه":"🚪","فرص":"🚪","بدايه":"🏁","نهايه":"🏁",
+"خطوه":"👣","خطوات":"👣","طريق":"🛣️","طريقه":"🛣️","وقت":"⏰","ساعه":"⏰","ساعات":"⏰","دقيقه":"⏱️","دقايق":"⏱️","دقائق":"⏱️","ثانيه":"⏱️","ثواني":"⏱️","سرعه":"⚡","سريع":"⚡",
+"بسرعه":"⚡","بطيء":"🐢","صباح":"☀️","الصبح":"☀️","ليل":"🌙","الليل":"🌙","شمس":"☀️","مطر":"🌧️","بحر":"🌊","سفر":"✈️","طياره":"✈️","رحله":"✈️","سياره":"🚗","سيارات":"🚗",
+"بيت":"🏠","منزل":"🏠","عائله":"🏡","عايله":"🏡","اهل":"🏡","طفل":"👶","اطفال":"👶","عيال":"👶","صديق":"🤝","اصدقاء":"🤝","زواج":"💍","عرس":"💍","مدرسه":"🏫","جامعه":"🎓",
+"دراسه":"📚","كتاب":"📚","كتب":"📚","قراءه":"📖","تعلم":"📚","معلومه":"🧠","معلومات":"🧠","عقل":"🧠","دماغ":"🧠","صحه":"🩺","دكتور":"🩺","مستشفي":"🏥","دواء":"💊","عيون":"👀",
+"اسمع":"👂","تعليق":"💬","تعليقات":"💬","قهوه":"☕","شاي":"🍵","ماء":"💧","مويه":"💧","اكل":"🍽️","اكله":"🍽️","اكلات":"🍽️","جوع":"🍽️","رجيم":"🥗","نار":"🔥","ثلج":"🧊",
+"برد":"🥶","العالم":"🌍","دوله":"🌍","دول":"🌍","مدينه":"🏙️","السعوديه":"🇸🇦","الرياض":"🏙️","جده":"🌊","متابعين":"👥","متابع":"👥","جمهور":"👥","لايك":"👍","اعجاب":"👍","شارك":"🔁",
+"احفظ":"🔖","حفظ":"🔖","رابط":"🔗","البايو":"🔗","بايو":"🔗","تابعني":"➕","تابعوني":"➕","اشترك":"🔔","اشتراك":"🔔","رقم":"🔢","ارقام":"🔢","نسبه":"📊","زياده":"📈","نمو":"📈",
+"انخفاض":"📉","هبوط":"📉","صعود":"📈","قمه":"⛰️","قنبله":"💣","انفجار":"💥","ضربه":"💥","سحر":"✨","الماس":"💎","تاج":"👑","صاروخ":"🚀","اطلاق":"🚀","موسيقي":"🎵","اغنيه":"🎵",
+"فلم":"🎬","فيلم":"🎬","مسلسل":"📺","تلفزيون":"📺","قطه":"🐱","كلب":"🐶","money":"💰","cash":"💰","rich":"💎","price":"🏷️","business":"💼","sales":"📊","growth":"📈","profit":"📈",
+"ai":"🤖","robot":"🤖","app":"📱","phone":"📱","iphone":"📱","computer":"💻","laptop":"💻","code":"💻","data":"📊","camera":"📷","video":"🎬","podcast":"🎙️","love":"❤️","happy":"😄",
+"sad":"😢","funny":"😂","fear":"😨","shock":"😱","wow":"😮","crazy":"🤯","idea":"💡","ideas":"💡","secret":"🤫","tip":"💡","tips":"💡","warning":"⚠️","mistake":"❌","mistakes":"❌",
+"wrong":"❌","win":"🏆","success":"🏆","fail":"📉","goal":"🎯","goals":"🎯","dream":"✨","strong":"💪","gym":"🏋️","fire":"🔥","fast":"⚡","time":"⏰","coffee":"☕","food":"🍽️",
+"travel":"✈️","car":"🚗","home":"🏠","family":"🏡","book":"📚","learn":"📚","brain":"🧠","health":"🩺","sleep":"😴","gift":"🎁","party":"🎉","followers":"👥","subscribe":"🔔","share":"🔁",
+"save":"🔖","link":"🔗","rocket":"🚀","launch":"🚀","startup":"🚀","problem":"🧩","solution":"🔑","world":"🌍","music":"🎵","movie":"🎬","question":"❓"
+}/*EMOJSON*/;
+  const EMO_PRE=['وبال','وال','بال','فال','كال','وهال','هال','لل','ال','و','ف','ب','ل','ك'], EMO_SUF=['هم','هن','ها','كم','نا','ات','ون','ين','ك','ه','ي'];
+  function emoNorm(s){ return String(s||'').toLowerCase().replace(/[ً-ْـٰ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/ؤ/g,'و').replace(/ئ/g,'ي').replace(/[^ء-يa-z0-9]/g,''); }
+  let EMO_N=null; const emoD=()=>{ if(!EMO_N){ EMO_N={}; for(const k in EMO_DICT) EMO_N[emoNorm(k)]=EMO_DICT[k]; } return EMO_N; };
+  function emoMatch(word){ const w=emoNorm(word); if(w.length<2) return null; const D=emoD(), c=[w];
+    for(const p of EMO_PRE) if(w.startsWith(p)&&w.length-p.length>=2) c.push(w.slice(p.length));
+    for(const b of c.slice()) for(const s of EMO_SUF) if(b.endsWith(s)&&b.length-s.length>=3){ const r=b.slice(0,-s.length); c.push(r); if(r.endsWith('ت')) c.push(r.slice(0,-1)+'ه'); }
+    for(const k of c) if(Object.prototype.hasOwnProperty.call(D,k)) return D[k]; return null; }
+  /* الخطة: لكل جملة إيموجي واحد على الأكثر. الكلمة المهمة (hot) أولى، وبين كل إيموجي والثاني «gap» ثانية على الأقل. اللي اختاره المستخدم (set) يتقدّم دايماً، و'' = بدون */
+  function emoPlan(cards,E){ E=E||{}; const set=E.set||{}, gap=Math.max(0,+(E.gap==null?2.5:E.gap)), only=E.only||'all', C=[];
+    (cards||[]).forEach((c,ci)=>{ const ws=c.w||[]; if(!ws.length) return; const k=ws.map(w=>w.t).join(' ');
+      if(Object.prototype.hasOwnProperty.call(set,k)){ const em=String(set[k]||''); if(!em) return; let wi=ws.findIndex(w=>emoMatch(w.t)); if(wi<0) wi=ws.findIndex(w=>w.hot); if(wi<0) wi=Math.floor((ws.length-1)/2);
+        C.push({ci,wi,em,s:ws[wi].s,e:c.e,t:ws[wi].t,by:'you',pr:2}); return; }
+      if(E.auto===false) return;
+      let best=-1, em=null; for(let i=0;i<ws.length;i++){ if(ws[i].bl) continue; const m=emoMatch(ws[i].t); if(!m) continue; if(only==='hot'&&!ws[i].hot) continue; if(best<0||(ws[i].hot&&!ws[best].hot)){ best=i; em=m; } }
+      if(best>=0) C.push({ci,wi:best,em,s:ws[best].s,e:c.e,t:ws[best].t,by:'auto',pr:ws[best].hot?1:0}); });
+    /* اختيارك أول، بعده الكلمات المهمة، بعدها الباقي: كل واحد يبعد «gap» ثانية عن اللي قبله */
+    const keep=[]; C.slice().sort((a,b)=>(b.pr-a.pr)||(a.s-b.s)).forEach(x=>{ if(x.pr<2&&keep.some(y=>Math.abs(y.s-x.s)<gap)) return; keep.push(x); });
+    return keep.sort((a,b)=>a.s-b.s).map(x=>({ci:x.ci,wi:x.wi,em:x.em,s:x.s,e:x.e,t:x.t,by:x.by})); }
+  /*}EMOCORE*/
+  let _EP=null, _EPk='';
+  function emoPlanNow(){ const E=HSX.emoji; if(!E||!E.on) return []; const k=JSON.stringify([E.set||{},E.gap,E.only,E.auto,CAPS.length,CAPS.length?CAPS[CAPS.length-1].e:0,CAPS.map(c=>c.s).join(',')]); if(k!==_EPk||!_EP){ _EP=emoPlan(CAPS,E); _EPk=k; } return _EP; }
+  window.__hsEmoji={match:emoMatch,plan:()=>emoPlanNow(),planOf:emoPlan,dict:EMO_DICT};
+  let EMOW=[];   /* أماكن كلمات الكابشن بهالفريم (من capDraw) */
+  const EMOFONT='"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Segoe UI Symbol",sans-serif';
+  function emojiDraw(c,t){ const E=HSX.emoji; if(!E||!E.on||!CAP.on) return; const ci=CAPS.indexOf(c); if(ci<0) return; const it=emoPlanNow().find(p=>p.ci===ci); if(!it||t<it.s||t>=c.e) return;
+    const w=c.w[it.wi]; const pos=EMOW.find(p=>p.s===w.s&&p.t===w.t); if(!pos&&E.pos!=='center') return;   /* الكلمة مو بهالصفحة */
+    const sz=Math.max(40,Math.min(200,+E.size||88)), lt=t-it.s, rt=c.e-t, an=E.anim||'pop', box=window.__hsCapBox||{top:1400,bottom:1500};
+    let x=E.pos==='center'?Math.round(10.8*(CAP.x==null?50:+CAP.x)):pos.x, y=box.top-sz*0.62-8; if(y<sz*0.7+60) y=box.bottom+sz*0.62+8; x=Math.max(sz*0.62,Math.min(1080-sz*0.62,x));
+    let a=Math.min(1,rt/0.15), sc=1, rot=0, dy=0; const k=Math.min(1,lt/0.32);
+    if(an==='pop'){ sc=0.2+0.8*back(k); rot=(1-ease(k))*-0.35; a*=Math.min(1,lt/0.08); dy=Math.sin(lt*3.4)*sz*0.04*k; }
+    else if(an==='bounce'){ const kk=Math.min(1,lt/0.5); dy=kk<0.6?-(1-Math.pow(kk/0.6,2))*sz*1.6:-Math.abs(Math.sin((kk-0.6)/0.4*Math.PI))*sz*0.18*(1-kk); a*=Math.min(1,lt/0.1); sc=kk<0.6?1:1+0.12*Math.sin((kk-0.6)/0.4*Math.PI); }
+    else if(an==='float'){ a*=ease(Math.min(1,lt/0.3)); dy=(1-ease(k))*sz*0.5-lt*sz*0.12; sc=0.85+0.15*ease(k); }
+    if(rt<0.15){ sc*=0.7+0.3*(rt/0.15); }
+    X.save(); X.globalAlpha*=Math.max(0,a); X.translate(x,y+dy); X.rotate(rot); X.scale(sc,sc); X.font=sz+'px '+EMOFONT; X.textAlign='center'; X.textBaseline='middle'; X.direction='ltr';
+    X.shadowColor='rgba(0,0,0,0.35)'; X.shadowBlur=Math.round(sz*0.18); X.shadowOffsetY=Math.round(sz*0.06); X.fillStyle='#FFFFFF'; X.fillText(it.em,0,0); X.restore(); }
   /* 4.7.1: عرض كل كلمة ينحسب مرة وحدة بدل كل فريم (كان أثقل شي بالجوال وقت التشغيل). ينمسح لما يحمل خط جديد */
   const _MW=new Map(); try{ document.fonts.addEventListener('loadingdone',()=>_MW.clear()); }catch(e){}
   function mw(t){ const k=X.font+'|'+t; let v=_MW.get(k); if(v===undefined){ v=X.measureText(t).width; if(_MW.size>6000) _MW.clear(); _MW.set(k,v); } return v; }
@@ -184,12 +258,15 @@
     if(HSX.nocap||!CAP.on) return;
     const c=CAPS.find(c=>t>=c.s&&t<c.e); if(!c) return;
     const key=cardKey(c), tr0=((EN.map||{})[key]||'').trim(), tr=tr0.replace(/\*/g,''), ar=P.lang==='ar';
+    /* 4.42: كلامه هو الكابشن الكبير (عربي، أو بدون ترجمة) ← محرّك الكابشن الكامل: الشكل والدخول والخروج والتمييز والستايلات الجاهزة، والترجمة سطر تحته */
+    if(ar||!tr) return false;
     /* 4.27: الكلمة المهمة بلون: من كلماته المميزة، أو بالترجمة اللي بين نجمتين *كذا* */
     const HN=w=>String(w).replace(/[.,،؟?!:؛"«»()]/g,''), HOT=new Set();
     if(ar||!tr) c.w.forEach(w=>{ if(w.hot) HOT.add(HN(w.t)); }); else (tr0.match(/\*[^*]+\*/g)||[]).forEach(m=>m.slice(1,-1).split(/\s+/).forEach(x=>HOT.add(HN(x))));
-    const hotLine=(l,x,y,rtl)=>{ const ws=l.split(' '); if(!HOT.size||!ws.some(w=>HOT.has(HN(w)))){ X.fillText(l,x,y); return; }
+    const hotLine=(l,x,y,rtl)=>{ const ws=l.split(' '), on=j=>HOT.has(HN(ws[j]));
+      if(!ws.some((w,j)=>on(j))){ X.fillText(l,x,y); return; }
       const sp=X.measureText(' ').width, wd=ws.map(w=>X.measureText(w).width), tot=wd.reduce((a,b)=>a+b,0)+sp*(ws.length-1), al=X.textAlign; X.textAlign='left'; let px=rtl?x+tot/2:x-tot/2;
-      ws.forEach((w,i)=>{ if(rtl) px-=wd[i]; X.fillStyle=HOT.has(HN(w))?(CAP.active||'#F5A524'):(CAP.color||'#FFFFFF'); X.fillText(w,px,y); px+=rtl?-sp:wd[i]+sp; }); X.textAlign=al; X.fillStyle=CAP.color||'#FFFFFF'; };
+      ws.forEach((w,i)=>{ if(rtl) px-=wd[i]; X.fillStyle=on(i)?(CAP.active||'#F5A524'):(CAP.color||'#FFFFFF'); X.fillText(w,px,y); px+=rtl?-sp:wd[i]+sp; }); X.textAlign=al; X.fillStyle=CAP.color||'#FFFFFF'; };
     const main=ar?key:(tr||key), sub=ar?(EN.on?tr:''):((P.orig!==false&&tr)?key:'');
     const lt=t-c.s, rt=c.e-t, a=Math.min(1,lt/0.12,rt/0.1); if(a<=0) return;
     const fs=+CAP.size||44, sfs=Math.round(fs*(+P.subScale||0.62)), mf=(CAP.weight||700)+' '+fs+'px '+F(CAP.font), sf='500 '+sfs+'px '+F(EN.font||'Cairo');
@@ -210,7 +287,7 @@
     if(t<VEND&&!CAPFORCE){ X.save(); try{ layers(t,true,'img'); }catch(e){} X.restore(); X.save(); try{ cinePass(t); }catch(e){ if(!window.__hsCE){ window.__hsCE=1; console.error('hs cine: '+e.message); } } X.restore(); X.save(); try{ layers(t,true,'other'); }catch(e){} X.restore(); }
     if(t<VEND&&!CAPFORCE){ X.save(); try{ if(dkOn()) dkOverlay(t,dkStage()); deskItems(t); }catch(e){ if(!window.__hsDKE){ window.__hsDKE=1; console.error('hs desk: '+e.message); } } X.restore(); }
     if(t<VEND&&kinAt(t)) return;
-    if(t<VEND&&!CAPFORCE&&HSX.pod&&HSX.pod.on){ podDraw(t); return; }
+    if(t<VEND&&!CAPFORCE&&HSX.pod&&HSX.pod.on&&podDraw(t)!==false) return;
     if(HSX.nocap) return;
     if((HSX.layers||[]).some(L=>!L.off&&t>=L.s&&t<L.e&&(L.type==='cover'||(L.type==='viz'&&L.kind==='cta')||(L.type==='mg'&&mgHide(L))))) return;
     if(!CAP.on){ const c0=blOf()&&CAPS.find(c=>t>=c.s&&t<c.e); if(!c0||blOf().cap==='keep') return _cap(t);
@@ -220,7 +297,7 @@
     if(collageActive(t)) return;
     const c=CAPS.find(c=>t>=c.s&&t<c.e); if(!c) return;
     const _ov=(HSX.capOv||{})[cardKey(c)], _CAP0=CAP; if(_ov) CAP={...CAP,..._ov};
-    try{ return capDraw(blMask(c),t); } finally { CAP=_CAP0; } };
+    try{ const r_=capDraw(blMask(c),t); if(HSX.emoji&&HSX.emoji.on){ try{ emojiDraw(c,t); }catch(e){ if(!window.__hsEME){ window.__hsEME=1; console.error('hs emoji: '+e.message); } } } return r_; } finally { CAP=_CAP0; } };
   /* 4.6: كتم الكلمات ← hs.bleep {mode, cap: stars|hide|keep, items:[{s,e,t}]}: الكلمة المكتومة بالكابشن نجوم أو مربع */
   const blOf=()=>{ const b=HSX.bleep; return b&&Array.isArray(b.items)&&b.items.length?b:null; };
   const blHit=w=>{ const b=blOf(); if(!b) return false; const m=(w.s+w.e)/2; return b.items.some(i=>m>=i.s-1e-6&&m<=i.e+1e-6); };
@@ -230,7 +307,7 @@
     return hit?{...c,w}:c; }
   window.__hsBleep={hit:blHit,star:blStar};
   function capDraw(c,t){
-    const lt=t-c.s, rt=c.e-t; let a=1, dy=0, sc=1;
+    EMOW=[]; const lt=t-c.s, rt=c.e-t; let a=1, dy=0, sc=1;
     let dx=0; const EN_=CAP.enter||'rise';
     if(lt<0.22&&EN_!=='none'&&EN_!=='words'){ const k=lt/0.22;
       if(EN_==='rise'){ a=ease(k); dy=(1-ease(k))*24; sc=0.94+0.06*back(k); }
@@ -267,7 +344,7 @@
         else if(EX_==='wipe'){ a=1; WIPE=q; } } }
     /* سطر الترجمة */
     let EL=[], efs=EN.size, elh=Math.round(efs*1.3), efont=fstr(EN,efs);
-    if(EN.on){ const tx=EN.map[cardKey(c)]; if(tx) EL=wrapText(tx,efont,Math.max(CAP.width,820)).slice(0,2); }
+    if(EN.on){ const tx=String(EN.map[cardKey(c)]||'').replace(/\*/g,''); if(tx) EL=wrapText(tx,efont,Math.max(CAP.width,820)).slice(0,2); }
     const bhA=L.length*lh, bhE=EL.length?EL.length*elh+EN.gap:0, bh=bhA+bhE;
     const BOXED=CAP.bg==='box'||CAP.bg==='bar'||CAP.bg==='lines'||CAP.bg==='glass';
     const padX=BOXED?Math.round(fs*(CAP.bg==='lines'?0.34:0.6)):0, padY=BOXED?Math.round(fs*(CAP.bg==='lines'?0.08:0.38)):0;
@@ -304,7 +381,7 @@
           else if(i.fx==='shake'||i.fx==='crack'){ ddx=Math.sin(k*46)*(1-k)*14; }
           else if(i.fx==='type'){ clip=ease(k); }
           else { ps*=1+0.26*Math.sin(k*Math.PI); } }
-        X.save(); if(wa<1) X.globalAlpha*=wa; const cxw=x-i.w/2; X.translate(cxw+ddx,cy+lift+ddy); X.scale(ps,ps); X.translate(-cxw,-(cy+lift));
+        X.save(); if(wa<1) X.globalAlpha*=wa; const cxw=x-i.w/2; EMOW.push({s:i.s,t:i.t,x:cx+dx+(cxw-cx)*sc});   /* 4.48: مكان الكلمة للإيموجي */ X.translate(cxw+ddx,cy+lift+ddy); X.scale(ps,ps); X.translate(-cxw,-(cy+lift));
         if(clip<1){ X.beginPath(); X.rect(x-i.w*clip-4,cy-fs,i.w*clip+8,fs*2); X.clip(); }
         if(i.bl===2){ shadowOff(); X.fillStyle=act?CAP.active:CAP.color; rr(x-i.w,cy+lift-fs*0.4,i.w,fs*0.8,Math.round(fs*0.12)); X.fill(); X.restore(); x-=i.w+gap; continue; }
         let fill=(act||(i.hot&&sp))?CAP.active:CAP.color; const on=act||(i.hot&&sp);
@@ -441,10 +518,15 @@
   /*KF{*/
   const KF_TYPES=['text','image','char','lt','mark','draw'];
   const kfOk=L=>!!L&&KF_TYPES.includes(L.type)&&!(L.type==='image'&&L.fit==='cover');
+  /* 4.45: منحنى السرعة (Graph Editor): cubic-bezier بنقطتين تسحبها، مثل CSS */
+  function bezE(cb){ const [x1,y1,x2,y2]=(cb||[0.42,0,0.58,1]).map(Number), cx=3*x1, bx=3*(x2-x1)-cx, ax=1-cx-bx, cy=3*y1, by=3*(y2-y1)-cy, ay=1-cy-by;
+    const X_=u=>((ax*u+bx)*u+cx)*u, Y_=u=>((ay*u+by)*u+cy)*u, dX=u=>(3*ax*u+2*bx)*u+cx;
+    return k=>{ if(k<=0) return 0; if(k>=1) return 1; let u=k; for(let i=0;i<8;i++){ const d=dX(u); if(Math.abs(d)<1e-6) break; const e=X_(u)-k; if(Math.abs(e)<1e-6) break; u-=e/d; } if(u<0||u>1){ let lo=0,hi=1; u=k; for(let i=0;i<30;i++){ const x=X_(u); if(Math.abs(x-k)<1e-6) break; if(x<k) lo=u; else hi=u; u=(lo+hi)/2; } } return Y_(u); }; }
+  if(typeof window!=='undefined') window.__hsBez=bezE;
   const KF_E={ smooth:k=>k<0.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2, linear:k=>k, back:k=>{ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(k-1,3)+c1*Math.pow(k-1,2); }, hold:k=>k>=1?1:0 };
   function kfVal(K,u){ const n=K.length, D={dx:0,dy:0,s:1,r:0,o:1}, g=(k,f)=>k[f]==null||!isFinite(+k[f])?D[f]:+k[f], one=k=>({dx:g(k,'dx'),dy:g(k,'dy'),s:g(k,'s'),r:g(k,'r'),o:g(k,'o')});
     if(u<=+K[0].t) return one(K[0]); if(u>=+K[n-1].t) return one(K[n-1]);
-    let i=0; while(i<n-2&&u>=+K[i+1].t) i++; const a=K[i], b=K[i+1], span=Math.max(1e-6,+b.t-+a.t), k=(KF_E[a.e]||KF_E.smooth)(Math.max(0,Math.min(1,(u-+a.t)/span)));
+    let i=0; while(i<n-2&&u>=+K[i+1].t) i++; const a=K[i], b=K[i+1], span=Math.max(1e-6,+b.t-+a.t), k=(a.e==='curve'&&Array.isArray(a.cb)?bezE(a.cb):(KF_E[a.e]||KF_E.smooth))(Math.max(0,Math.min(1,(u-+a.t)/span)));
     const A=one(a), B=one(b), o={}; for(const f in A) o[f]=A[f]+(B[f]-A[f])*k; o.o=Math.max(0,Math.min(1,o.o)); o.s=Math.max(0.02,o.s); return o; }
   function kfAt(L,t){ const K=L&&L.kf; if(!Array.isArray(K)||!K.length||!kfOk(L)) return null; return kfVal(K.slice().sort((a,b)=>a.t-b.t),t-L.s); }
   function kfPivot(L){ const T=L.type, x=L.x, y=L.y;
@@ -459,11 +541,19 @@
   const isUnder=L=>((L.type==='image'&&(L.fit==='cover'||L.fit==='card'))||L.type==='anno')&&L.under!==false;
   /* 4.12: الترتيب نفس التايم لاين: السطر الأعلى ينرسم آخر فيطلع فوق، وبنفس السطر الأحدث فوق */
   function layers(t,under,only){ const Ls=(HSX.layers||[]).filter(L=>(!only||(only==='img')===(L.type==='image'))&&L.type!=='fx'&&L.type!=='split'&&L.type!=='viz'&&L.type!=='cover'&&L.type!=='bg'&&L.type!=='behind'&&L.type!=='pip'&&L.type!=='collage'&&L.type!=='kinetic'&&L.type!=='desk'&&L.type!=='mg'&&!L.off&&t>=L.s&&t<L.e&&isUnder(L)===!!under&&(L.overKin||!kinAt(t))).sort((a,b)=>(a.track||0)-(b.track||0));
-    for(const L of Ls){ let K=enterK(L,t); X.save(); try{
-        const Q=L.kf?kfAt(L,t):null; if(Q){ const P=kfPivot(L); X.translate(P[0]+Q.dx,P[1]+Q.dy); if(Q.r) X.rotate(Q.r*Math.PI/180); if(Q.s!==1) X.scale(Q.s,Q.s); X.translate(-P[0],-P[1]); if(Q.o!==1) K={...K,a:K.a*Q.o}; }   // 4.29: حركة بالمفاتيح
-        if(L.type==='text') textBlock(L,t,K); else if(L.type==='char') charLayer(L,t,K); else if(L.type==='image') imageLayer(L,t,K); else if(L.type==='anno') annoLayer(L,t,K);
-        else if(L.type==='mark') markLayer(L,t,K); else if(L.type==='draw') drawLayer(L,t,K); else if(L.type==='cursor') cursorLayer(L,t); else if(L.type==='lt') ltLayer(L,t,K);
-      }catch(e){ if(!window.__hsLE){window.__hsLE=1;console.error('hs layer '+L.id+': '+e.message);} } X.restore(); } }
+    for(const L of Ls){
+      if((L.mblur||(HSX.mb&&HSX.mb.on))&&lyMoving(L,t)){ const W=[0.10,0.16,0.24]; for(let j=3;j>=1;j--){ const tt=t-j/60; if(tt<L.s) continue; X.save(); X.globalAlpha*=W[3-j]; try{ lyOne(L,tt,enterK(L,tt)); }catch(e){} X.restore(); } }   // 4.45: ضبابية الحركة: أثر خفيف ورا الطبقة وهي تتحرك
+      X.save(); try{ lyOne(L,t,enterK(L,t)); }catch(e){ if(!window.__hsLE){window.__hsLE=1;console.error('hs layer '+L.id+': '+e.message);} } X.restore(); } }
+  /* 4.45: ربط الطبقات (Parenting): الطبقة تمشي مع حركة الطبقة الأم (مفاتيحها وتتبع الوجه)، والأم ممكن لها أم */
+  function lyParent(L,t,depth){ const P=L.parent&&(HSX.layers||[]).find(x=>x.id===L.parent&&x!==L); if(!P||depth>4) return; lyParent(P,t,depth+1); lyFace(P,t);
+    const Q=P.kf?kfAt(P,t):null; if(Q){ const pv=kfPivot(P); X.translate(pv[0]+Q.dx,pv[1]+Q.dy); if(Q.r) X.rotate(Q.r*Math.PI/180); if(Q.s!==1) X.scale(Q.s,Q.s); X.translate(-pv[0],-pv[1]); } }
+  function lyFace(L,t){ if(L.track!=='face') return; const f0=faceAt(L.s), f1=faceAt(t); if(f0&&f1) X.translate((f1[1]-f0[1])*1080,(f1[2]-f0[2])*1920); }   // 4.44: الطبقة تتبع الوجه
+  function lyOne(L,t,K){ lyParent(L,t,0); lyFace(L,t);
+    const Q=L.kf?kfAt(L,t):null; if(Q){ const P=kfPivot(L); X.translate(P[0]+Q.dx,P[1]+Q.dy); if(Q.r) X.rotate(Q.r*Math.PI/180); if(Q.s!==1) X.scale(Q.s,Q.s); X.translate(-P[0],-P[1]); if(Q.o!==1) K={...K,a:K.a*Q.o}; }   // 4.29: حركة بالمفاتيح
+    if(L.type==='text') textBlock(L,t,K); else if(L.type==='char') charLayer(L,t,K); else if(L.type==='image') imageLayer(L,t,K); else if(L.type==='anno') annoLayer(L,t,K);
+    else if(L.type==='mark') markLayer(L,t,K); else if(L.type==='draw') drawLayer(L,t,K); else if(L.type==='cursor') cursorLayer(L,t); else if(L.type==='lt') ltLayer(L,t,K); }
+  function lyMoving(L,t){ if(t-L.s<0.75||L.e-t<0.75) return true; const P=L.parent&&(HSX.layers||[]).find(x=>x.id===L.parent); const chk=M=>{ if(!M) return false; if(M.track==='face'){ const a=faceAt(t), b=faceAt(t-0.05); if(a&&b&&(Math.abs(a[1]-b[1])+Math.abs(a[2]-b[2]))>0.0005) return true; } if(M.kf){ const a=kfAt(M,t), b=kfAt(M,t-0.05); if(a&&b&&(Math.abs(a.dx-b.dx)+Math.abs(a.dy-b.dy)+Math.abs(a.s-b.s)*300+Math.abs(a.r-b.r))>0.5) return true; } return false; };
+    return chk(L)||chk(P)||L.type==='cursor'; }
   /* ═══════════ 3.8: كروت الشرح بالموشن ═══════════
      الكرت يملأ المساحة اللي فوق الفيديو بالضبط فيتحرك معه دخولاً وخروجاً. style يحدد شكل الشرح:
      list نقاط · steps خطوات مرقّمة · flow مخطط بأسهم · versus مقارنة · stat رقم كبير · check صح وغلط · timeline خط زمني · funnel قمع · quote اقتباس · draw رسم حر (عناصر Claude يرتبها) */
@@ -1722,6 +1812,9 @@
   const _dvX=window.drawVideo;
   if(typeof _dvX==='function') window.drawVideo=function(t){ const V=HSX.vxf; if(!V||t>=VEND||(!+V.x&&!+V.y&&(+V.s||1)===1)) return _dvX.apply(this,arguments);
     const s=Math.max(0.2,Math.min(4,+V.s||1)); X.save(); X.fillStyle='#000'; X.fillRect(0,0,1080,1920); X.translate(540+(+V.x||0),960+(+V.y||0)); X.scale(s,s); X.translate(-540,-960); try{ return _dvX.apply(this,arguments); } finally { X.restore(); } };
+  /* 4.44: الإضاءة الموضعية فوق الفيديو بمكانه على الشاشة (بعد تحريكه وتكبيره)، وقبل الكابشن والطبقات */
+  const _dvW=window.drawVideo;
+  if(typeof _dvW==='function') window.drawVideo=function(t){ const r=_dvW.apply(this,arguments); const W=HSX.win; if(W&&W.on&&t<VEND){ let R={x:0,y:0,w:1080,h:1920}; try{ if(typeof window.vrect==='function'){ const v=window.vrect(t); if(v&&v.w>10&&v.h>10) R=v; } }catch(e){} X.save(); X.setTransform(1,0,0,1,0,0); try{ winPass(X,R.x,R.y,R.w,R.h); }catch(e){ if(!window.__hsWP){ window.__hsWP=1; console.error('hs window: '+e.message); } } X.restore(); } return r; };
   const _dw28=window.draw;
   window.draw=function(t){ let w=null; try{ w=warpAt(t); }catch(e){} if(!w||w.kind==='freeze') return _dw28(t);   /* 4.35: التجميد يرسم بوقته (الكابشن يكمل) والفريم بس واقف */
     _dw28(w.t2); try{ if(w.kind==='rewind') vhsOver(t,w.L); else baFrame(t,w); }catch(e){ if(!window.__hsWE){ window.__hsWE=1; console.error('hs warp: '+e.message); } } };
@@ -1808,6 +1901,48 @@
   const _bc28=window.brollClips;
   if(typeof _bc28==='function'&&typeof BROLL!=='undefined') window.brollClips=function(t){ const all=BROLL||[], ph=all.filter(b=>b.mode==='phone'&&t>=b.s&&t<b.e);
     if(!ph.length) return _bc28(t); BROLL=all.filter(b=>b.mode!=='phone'); try{ _bc28(t); } finally { BROLL=all; } for(const b of ph){ try{ phoneClip(b,t); }catch(e){ if(!window.__hsPE){ window.__hsPE=1; console.error('hs phone: '+e.message); } } } };
+  /* 4.39: مفتاح اللون (Chroma key): يشيل الشاشة الخضراء أو الزرقاء من لقطة البي-رول، وتطلع العناصر فوق وجهك.
+     b.key={on,color:'auto'|'#RRGGBB',sim:0..100,soft:0..100,spill:0..100} · b.ks حجم % · b.kx/b.ky إزاحة بالبكسل. بدون key.on نفس الرسم القديم. */
+  const KEYD={color:'auto',sim:40,soft:12,spill:60};
+  /*KEYCORE{*/
+  const keyHex=h=>{ const m=/^#?([0-9a-f]{6})$/i.exec(String(h||'')); if(!m) return null; const n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; };
+  const keyCbCr=(r,g,b)=>[-0.168736*r-0.331264*g+0.5*b, 0.5*r-0.418688*g-0.081312*b];
+  function keyGuessData(d,w,h){ /* لون الخلفية من حواف الصورة: لازم 75% منها لون واحد مشبّع أخضر أو أزرق (السما والعشب ما تنحسب) */
+    const px=[]; const take=(x,y)=>{ const i=(y*w+x)*4; px.push([d[i],d[i+1],d[i+2]]); };
+    for(let x=0;x<w;x++){ take(x,0); take(x,1); take(x,h-1); take(x,h-2); } for(let y=2;y<h-2;y++){ take(0,y); take(1,y); take(w-1,y); take(w-2,y); }
+    const cand=px.filter(([r,g,b])=>{ const mx=Math.max(r,g,b), mn=Math.min(r,g,b); return mx>60&&(mx-mn)>mx*0.5&&(g===mx||b===mx); });
+    const gr=cand.filter(p=>p[1]>=p[2]), bl=cand.filter(p=>p[2]>p[1]), grp=gr.length>=bl.length?gr:bl; if(grp.length<px.length*0.75) return null;
+    const med=i=>grp.map(p=>p[i]).sort((a,b)=>a-b)[grp.length>>1], m=[med(0),med(1),med(2)], [mb,mr]=keyCbCr(m[0],m[1],m[2]);
+    const near=px.filter(p=>{ const [cb,cr]=keyCbCr(p[0],p[1],p[2]); return Math.hypot(cb-mb,cr-mr)<25; }).length; if(near<px.length*0.75) return null;
+    return '#'+m.map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase(); }
+  function keyProcess(d,o){ /* d: RGBA تتعدّل بمكانها. يرجّع عدد البكسلات اللي انشالت كامل */
+    const kc=keyHex(o.color)||[0,177,64], [kb,kr]=keyCbCr(kc[0],kc[1],kc[2]), dom=kc[1]>=kc[2]?1:2, oth=dom===1?2:1;
+    const t0=Math.max(0,+o.sim)/100*120, t1=t0+Math.max(1.5,(+o.soft||0)/100*120), sp=Math.max(0,Math.min(1,(+o.spill||0)/100)); let gone=0;
+    for(let i=0;i<d.length;i+=4){ const r=d[i],g=d[i+1],b=d[i+2]; const cb=-0.168736*r-0.331264*g+0.5*b-kb, cr=0.5*r-0.418688*g-0.081312*b-kr;
+      const dist=Math.sqrt(cb*cb+cr*cr); let a=dist<=t0?0:dist>=t1?1:(dist-t0)/(t1-t0);
+      if(a<=0){ d[i+3]=0; gone++; continue; }
+      if(sp>0){ const c=d[i+dom], lim=Math.max(d[i],d[i+oth]); if(c>lim) d[i+dom]=c-(c-lim)*sp; }
+      d[i+3]=Math.round(d[i+3]*a); }
+    return gone; }
+  /*}KEYCORE*/
+  window.__hsKeyProcess=keyProcess; window.__hsKeyGuessData=keyGuessData;   /* للفحص الذاتي */
+  const KCACHE=new WeakMap(), KGUESS={};
+  function keyGuessIm(k,im){ if(KGUESS[k]!==undefined) return KGUESS[k]; try{ const w=54,h=96, c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(im,0,0,w,h); KGUESS[k]=keyGuessData(g.getImageData(0,0,w,h).data,w,h); }catch(e){ KGUESS[k]=null; } return KGUESS[k]; }
+  window.hsKeyGuess=function(k){ const b=(typeof BR!=='undefined')&&BR[k]; const im=b&&b.imgs&&b.imgs.find(x=>x&&x.naturalWidth); return im?keyGuessIm(k,im):null; };
+  function keyedFrame(b,im){ const o={...KEYD,...(b.key||{})}; let col=o.color; if(!keyHex(col)) col=keyGuessIm(b.k,im)||'#00B140';
+    const sig=[col,o.sim,o.soft,o.spill].join('|'), c0=KCACHE.get(im); if(c0&&c0.sig===sig) return c0.cv;
+    const w=im.naturalWidth, h=im.naturalHeight, cv=(c0&&c0.cv)||document.createElement('canvas'); if(cv.width!==w) cv.width=w; if(cv.height!==h) cv.height=h;
+    const g=cv.getContext('2d',{willReadFrequently:true}); g.clearRect(0,0,w,h); g.drawImage(im,0,0); const id=g.getImageData(0,0,w,h); keyProcess(id.data,{...o,color:col}); g.putImageData(id,0,0);
+    KCACHE.set(im,{sig,cv}); return cv; }
+  function keyClip(b,t){ const im=brFrame(b.k,t-b.s,1); if(!im) return; const cv=keyedFrame(b,im);
+    const k=ease(pr(t,b.s,b.s+0.25)), ko=1-pr(t,b.e-0.25,b.e); X.save(); X.globalAlpha*=k*ko;
+    const cov=(x,y,w,h)=>{ const s=Math.max(w/cv.width,h/cv.height), dw=cv.width*s, dh=cv.height*s; X.drawImage(cv,x+(w-dw)/2,y+(h-dh)/2,dw,dh); };
+    if(b.mode==='card'){ rr(130,250,820,560,40); X.clip(); cov(130,250,820,560); }
+    else { const sc=Math.max(0.2,Math.min(2,(b.ks==null?100:+b.ks)/100)), cx=540+(+b.kx||0), cy=960+(+b.ky||0); cov(cx-540*sc,cy-960*sc,1080*sc,1920*sc); }
+    X.restore(); }
+  const _bc39=window.brollClips;
+  if(typeof _bc39==='function'&&typeof BROLL!=='undefined') window.brollClips=function(t){ const all=BROLL||[], ky=all.filter(b=>b.key&&b.key.on&&b.mode!=='phone'&&t>=b.s&&t<b.e);
+    if(!ky.length) return _bc39(t); BROLL=all.filter(b=>!ky.includes(b)); try{ _bc39(t); } finally { BROLL=all; } for(const b of ky){ try{ keyClip(b,t); }catch(e){ if(!window.__hsKE){ window.__hsKE=1; console.error('hs key: '+e.message); } } } };
   window.__hsFx=['zoom','punch','shake','flash','bw','blur','vignette','letterbox','tint','glitch','grain','facezoom','spotlight','pulse','tilt','rgb','vhs','pixel','duotone','sepia','invert','mirror','leak','strobe','speed','confetti','curve','push','pull','rack','whip','spin','iris'];
   window.__hsAnims=['pop','rise','drop','slide','slideL','zoom','fade','type','none'];
 })();

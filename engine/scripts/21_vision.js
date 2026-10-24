@@ -7,7 +7,7 @@
 const http=require('http'), fs=require('fs'), path=require('path');
 const W=path.resolve(process.argv[2]||'.')+path.sep, MODE=process.argv[3]||'face', ARGS=process.argv.slice(4);
 const VIS=path.join(__dirname,'..','vision'), FPS=30, STEP=10;
-function resolvePuppeteer(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(__dirname,'..','node_modules/puppeteer-core'),path.join(process.cwd(),'node_modules/puppeteer-core')]){ if(!p) continue; try{ return require(p); }catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
+function resolvePuppeteer(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(__dirname,'..','node_modules/puppeteer-core'),path.join(process.cwd(),'node_modules/puppeteer-core'),path.join(require('os').homedir(),'.hojas-studio','node_modules','puppeteer-core')]){ if(!p) continue; try{ return require(p); }catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
 function findChrome(){ if(process.env.CHROME_PATH) return process.env.CHROME_PATH; const LA=process.env.LOCALAPPDATA||'', PF=process.env.ProgramFiles||'C:/Program Files', P86=process.env['ProgramFiles(x86)']||'C:/Program Files (x86)';
   for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',PF+'/Google/Chrome/Application/chrome.exe',P86+'/Google/Chrome/Application/chrome.exe',LA+'/Google/Chrome/Application/chrome.exe',PF+'/Microsoft/Edge/Application/msedge.exe',P86+'/Microsoft/Edge/Application/msedge.exe','/usr/bin/google-chrome','/usr/bin/chromium','/usr/bin/chromium-browser']){ try{ if(c&&fs.existsSync(c)) return c; }catch(e){} } throw new Error('ما لقيت كروم — حدّد CHROME_PATH'); }
 const pad=n=>String(n).padStart(5,'0');

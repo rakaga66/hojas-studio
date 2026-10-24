@@ -2,7 +2,7 @@
    node 20_shot.js <url> <out.png> [--full] [--width 1200]
    --full = الصفحة كاملة بطولها (عشان تتحرك لتحت داخل الإطار) · بدونها = أول شاشة فقط */
 const path=require('path');
-function resolvePuppeteer(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(__dirname,'..','node_modules/puppeteer-core'),path.join(process.cwd(),'node_modules/puppeteer-core')]){ if(!p) continue; try{ return require(p); }catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
+function resolvePuppeteer(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(__dirname,'..','node_modules/puppeteer-core'),path.join(process.cwd(),'node_modules/puppeteer-core'),path.join(require('os').homedir(),'.hojas-studio','node_modules','puppeteer-core')]){ if(!p) continue; try{ return require(p); }catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
 function findChrome(){ if(process.env.CHROME_PATH) return process.env.CHROME_PATH; const fs=require('fs'), LA=process.env.LOCALAPPDATA||'', PF=process.env.ProgramFiles||'C:/Program Files', P86=process.env['ProgramFiles(x86)']||'C:/Program Files (x86)';
   for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',PF+'/Google/Chrome/Application/chrome.exe',P86+'/Google/Chrome/Application/chrome.exe',LA+'/Google/Chrome/Application/chrome.exe',PF+'/Microsoft/Edge/Application/msedge.exe',P86+'/Microsoft/Edge/Application/msedge.exe','/usr/bin/google-chrome','/usr/bin/chromium','/usr/bin/chromium-browser']) if(c&&fs.existsSync(c)) return c; throw new Error('ما لقيت Chrome'); }
 (async()=>{ const a=process.argv.slice(2), url=a[0], out=a[1], full=a.includes('--full'), wi=a.indexOf('--width'), W=wi>=0?+a[wi+1]:1200;

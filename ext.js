@@ -881,6 +881,7 @@
 
   /* ── صورة داخل صورة: وجهك بكرت صغير بالزاوية والشرح ياخذ الشاشة ── */
   const pipRect=L=>{ const w=Math.round((L.size||0.36)*1080), h=Math.round(w*(L.circle?1:(L.ratio||1.25))), mg=48, p=L.pos||'tr';
+    if(p==='free'){ const x=Math.round(Math.max(0,Math.min(1080-w,(L.x==null?0.5:L.x)*1080-w/2))), y=Math.round(Math.max(0,Math.min(1920-h,(L.y==null?0.3:L.y)*1920-h/2))); return {x,y,w,h,r:L.circle?Math.round(w/2):(L.round==null?36:+L.round),pip:true}; }   /* 4.56: مكانها بيدك */
     const x=p==='tl'||p==='bl'?mg:p==='tc'||p==='bc'?Math.round((1080-w)/2):1080-mg-w, y=p==='bl'||p==='br'||p==='bc'?1920-h-300:170;
     return {x,y,w,h,r:L.circle?Math.round(w/2):(L.round==null?36:+L.round),pip:true}; };
   const pipAt=t=>{ const Ls=(HSX.layers||[]).filter(L=>L.type==='pip'&&!L.off&&t>=L.s&&t<L.e); return Ls.length?Ls[Ls.length-1]:null; };
@@ -1810,8 +1811,23 @@
     X.restore(); }
   /* 4.31: الفيديو نفسه يتحرك ويكبر ويصغر (hs.vxf) من المعاينة، فوري بدون إعادة قص */
   const _dvX=window.drawVideo;
-  if(typeof _dvX==='function') window.drawVideo=function(t){ const V=HSX.vxf; if(!V||t>=VEND||(!+V.x&&!+V.y&&(+V.s||1)===1)) return _dvX.apply(this,arguments);
-    const s=Math.max(0.2,Math.min(4,+V.s||1)); X.save(); X.fillStyle='#000'; X.fillRect(0,0,1080,1920); X.translate(540+(+V.x||0),960+(+V.y||0)); X.scale(s,s); X.translate(-540,-960); try{ return _dvX.apply(this,arguments); } finally { X.restore(); } };
+  /* 4.56: المضاف بزر + يتعرض من ملفه نفسه لين تجهز فريماته (فوري، بدون انتظار) */
+  const _dvP=window.drawVideo;
+  if(typeof _dvP==='function') window.drawVideo=function(t){ const P=window.__hsPend; if(P&&P.el&&t>=P.at&&t<P.at+P.dur){ const el=P.el, w=el.videoWidth||el.naturalWidth, h=el.videoHeight||el.naturalHeight;
+      if(w&&h){ const s=Math.max(1080/w,1920/h); X.save(); X.fillStyle='#000'; X.fillRect(0,0,1080,1920); try{ X.drawImage(el,(1080-w*s)/2,(1920-h*s)/2,w*s,h*s); }catch(e){} X.restore(); return; } }
+    return _dvP.apply(this,arguments); };
+  /* 4.55: كاميرا لكل لقطة (hs.cams): تقريب وتحريك داخل اللقطة، فوق تحريك الفيديو كله. 4.56: ومفاتيح (kf) تتحرك فيها حبة حبة */
+  function camKf(c,t){ const K=(c.kf||[]).slice().sort((a,b)=>a.t-b.t), u=t-c.s, f=['z','x','y'], v=k=>({z:k.z==null?(c.z||1):+k.z,x:k.x==null?(c.x||0):+k.x,y:k.y==null?(c.y||0):+k.y});
+    if(u<=K[0].t) return {...c,...v(K[0])}; const L_=K[K.length-1]; if(u>=L_.t) return {...c,...v(L_)};
+    let i=0; while(i<K.length-2&&u>=K[i+1].t) i++; const a=v(K[i]), b=v(K[i+1]), r=Math.max(0,Math.min(1,(u-K[i].t)/Math.max(1e-6,K[i+1].t-K[i].t))), k=r<0.5?4*r*r*r:1-Math.pow(-2*r+2,3)/2, o={...c};
+    f.forEach(n=>o[n]=a[n]+(b[n]-a[n])*k); return o; }
+  function camAt(t){ const L=HSX.cams; if(!Array.isArray(L)) return null; for(let i=0;i<L.length;i++){ const c=L[i]; if(t>=c.s-0.0005&&t<c.e) return Array.isArray(c.kf)&&c.kf.length?camKf(c,t):c; } return null; }
+  if(typeof _dvX==='function') window.drawVideo=function(t){ const V=HSX.vxf||{}, C=camAt(t), cz=C?Math.max(1,Math.min(3,+C.z||1)):1;
+    if(t>=VEND||(!+V.x&&!+V.y&&(+V.s||1)===1&&cz===1)) return _dvX.apply(this,arguments);
+    const s=Math.max(0.2,Math.min(4,+V.s||1)), px=C?Math.max(-1,Math.min(1,+C.x||0))*(cz-1)*540:0, py=C?Math.max(-1,Math.min(1,+C.y||0))*(cz-1)*960:0;
+    X.save(); X.fillStyle='#000'; X.fillRect(0,0,1080,1920); X.translate(540+(+V.x||0),960+(+V.y||0)); X.scale(s,s); X.translate(-540,-960);
+    if(cz!==1){ X.translate(540-px,960-py); X.scale(cz,cz); X.translate(-540,-960); }
+    try{ return _dvX.apply(this,arguments); } finally { X.restore(); } };
   /* 4.44: الإضاءة الموضعية فوق الفيديو بمكانه على الشاشة (بعد تحريكه وتكبيره)، وقبل الكابشن والطبقات */
   const _dvW=window.drawVideo;
   if(typeof _dvW==='function') window.drawVideo=function(t){ const r=_dvW.apply(this,arguments); const W=HSX.win; if(W&&W.on&&t<VEND){ let R={x:0,y:0,w:1080,h:1920}; try{ if(typeof window.vrect==='function'){ const v=window.vrect(t); if(v&&v.w>10&&v.h>10) R=v; } }catch(e){} X.save(); X.setTransform(1,0,0,1,0,0); try{ winPass(X,R.x,R.y,R.w,R.h); }catch(e){ if(!window.__hsWP){ window.__hsWP=1; console.error('hs window: '+e.message); } } X.restore(); } return r; };

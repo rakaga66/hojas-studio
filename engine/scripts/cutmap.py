@@ -60,6 +60,9 @@ def env(work):
     if work in _ENV: return _ENV[work]
     src = os.path.join(work, "a.wav") if os.path.isfile(os.path.join(work, "a.wav")) else os.path.join(work, "src.mov")
     if not os.path.isfile(src) and os.path.isfile(os.path.join(work, "src-cutz.mp4")): src = os.path.join(work, "src-cutz.mp4")   # 4.25
+    try: _b = json.load(open(os.path.join(work, "cut.json"), encoding="utf-8")).get("base")
+    except Exception: _b = None
+    if _b and os.path.isfile(os.path.join(work, _b)): src = os.path.join(work, _b)   # 4.54: فيه مقاطع مضافة: الصوت من الأصل الجديد
     db = []
     try:
         raw = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "1", "-ar", "16000", "-af", "highpass=f=90", "-f", "s16le", "-"], capture_output=True).stdout

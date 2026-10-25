@@ -217,7 +217,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if p.startswith('/api/state'): return self._json(200, state())
         if p.startswith('/api/comments'): return self._json(200, rd('comments.json', []))
         if p.startswith('/api/progress'):
-            return self._json(200, {"running": JOB["running"], "kind": JOB["kind"], "log": JOB["log"][-1800:], "done": JOB["done"], "err": JOB["err"], "reload": JOB["reload"], "elapsed": round(time.time() - JOB["started"]) if JOB["started"] else 0})
+            return self._json(200, {"running": JOB["running"], "kind": JOB["kind"], "log": JOB["log"][-1800:], "done": JOB["done"], "err": JOB["err"], "reload": JOB["reload"], "ins": JOB.get("ins"), "elapsed": round(time.time() - JOB["started"]) if JOB["started"] else 0})
         return self._ranged() if self._wants_range() else super().do_GET()
     def _wants_range(self): return bool(self.headers.get('Range'))
     def _ranged(self):

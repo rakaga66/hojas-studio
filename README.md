@@ -12,7 +12,7 @@
 
 <p align="center">
   <img alt="Claude Code skill" src="docs/assets/badge-skill.svg">
-  <img alt="Version 4.49" src="docs/assets/badge-version.svg">
+  <img alt="Version 4.56" src="docs/assets/badge-version.svg">
   <img alt="Runs on Windows, macOS, Linux" src="docs/assets/badge-platforms.svg">
   <img alt="License: PolyForm Noncommercial" src="docs/assets/badge-license.svg">
 </p>

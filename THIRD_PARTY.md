@@ -53,3 +53,9 @@ engine/scripts/collage-assets: public domain images from Wikimedia Commons (sour
 ## Interface font
 The public package does not include a custom interface font. The studio uses IBM Plex Sans Arabic (SIL OFL 1.1). To use your own font, put it at `fonts/nt-panorama-naskh-long.otf` (any Arabic OTF file with that name) and make sure you have the right to use it.
 GUIDE.html embeds IBM Plex Sans Arabic, IBM Plex Mono and Noto Naskh Arabic (SIL Open Font License 1.1).
+
+## Claude mark
+The Claude logo in the studio and the library (path data from Simple Icons, CC0 1.0, https://simpleicons.org) is a trademark of Anthropic, used only to point to Claude.
+
+## ChatGPT and Gemini marks
+The OpenAI and Google Gemini logos in the library settings (path data from Simple Icons, CC0 1.0, https://simpleicons.org) are trademarks of OpenAI and Google, used only to point to those services.

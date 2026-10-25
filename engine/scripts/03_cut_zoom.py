@@ -16,7 +16,16 @@ _bi.open = _utf8_open
 # ──────────────────────────────────────────────────────────────────
 import json, subprocess, sys, os
 W=os.path.abspath(sys.argv[1]); SRC=os.path.join(W,"src.mov")
-k=json.load(open(os.path.join(W,"cut.json")))["keep"]
+_cj=json.load(open(os.path.join(W,"cut.json"))); k=_cj["keep"]
+if _cj.get("base") and os.path.isfile(os.path.join(W,_cj["base"])):   # 4.54: فيه مقاطع مضافة بزر +: الأصل هو base، مو src.mov
+    _b=os.path.join(W,_cj["base"]); _ha="audio" in subprocess.run(["ffprobe","-v","error","-show_entries","stream=codec_type","-of","csv=p=0",_b],capture_output=True,text=True).stdout
+    _fc=[]; _in=""
+    for _i,(_a,_e) in enumerate(k):
+        _fc.append("[0:v]trim=start=%.4f:end=%.4f,setpts=PTS-STARTPTS[v%d]"%(_a,_e,_i)); _in+="[v%d]"%_i
+        if _ha: _fc.append("[0:a]atrim=start=%.4f:end=%.4f,asetpts=PTS-STARTPTS[a%d]"%(_a,_e,_i)); _in+="[a%d]"%_i
+    _fc.append("%sconcat=n=%d:v=1:a=%d[v]%s"%(_in,len(k),1 if _ha else 0,"[a]" if _ha else ""))
+    subprocess.run(["ffmpeg","-v","error","-y","-i",_b,"-filter_complex",";".join(_fc),"-map","[v]"]+(["-map","[a]","-c:a","aac","-b:a","192k"] if _ha else [])+["-c:v","libx264","-preset","veryfast","-crf","17","-pix_fmt","yuv420p","-r","30","-movflags","+faststart",os.path.join(W,"cutz.mp4")],check=True)
+    print("cutz.mp4 من الأصل المضاف (%d قطعة)"%len(k)); sys.exit(0)
 # 4.7.1: حدود كل جزء على فريم بالضبط. قبل كان كل جزء يطلع أطول أو أقصر من صوته بجزء من فريم، ومع 100 قطعة
 # يتراكم الفرق وتتأخر حركة الفم عن الصوت. الحين الصوت والصورة نفس الطول بالضبط بكل جزء.
 from fractions import Fraction as _Fr

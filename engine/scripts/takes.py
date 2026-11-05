@@ -158,12 +158,11 @@ def scan(words, db=None, total=None):
     for g in G.values():
         if len(g) < 2: continue
         g.sort(); gid = "g%d" % (len(groups) + 1); mx = max(items[i]["n"] for i in g)
-        def ok(i): return items[i]["n"] >= 0.8 * mx and items[i]["p"] >= 0.45
-        full = [i for i in g if ok(i)]; pick = full[-1] if full else max(g, key=lambda i: items[i]["n"])
+        pick = g[best_take([items[i] for i in g])]
         for i in g:
             items[i]["group"] = gid
             if i != pick: items[i]["tags"].append("retake"); items[i]["drop"] = True
-        why = "آخر محاولة كاملة" if pick == g[-1] else ("الأكمل" if items[pick]["n"] == mx else "الأوضح")
+        why = "آخر محاولة كاملة" if pick == g[-1] else ("الأنظف: أقل تأتأة وحشو" if items[pick]["n"] >= 0.8 * mx else "الأكمل")
         items[pick]["why"] = why; items[pick]["chosen"] = True
         groups.append({"id": gid, "items": [items[i]["id"] for i in g], "pick": items[pick]["id"], "by": "auto", "why": why})
     # المحذوف مبدئياً: بلا كلام، ضجيج، حشو (التحية اقتراح بس)
@@ -182,6 +181,22 @@ def scan(words, db=None, total=None):
     return {"v": 1, "items": items, "groups": groups}
 
 
+# 4.70: كلمات كاملة قصيرة تبدأ فيها كلمة ثانية («كل كلمة»، «من منا»، «لا لازم»، «ان انا»): مو تلعثم وما تنقص
+FULLW = set("كل من في لا ان انا هو هي ما يا لو مع عن قد كم لم لن اي ذا هذا هذي هذه الي اللي بس او ثم يعني عشان علي على الى الا وش شو ليش كيف متى وين لين منا منه منها له لها لك لي بي به بها فيه فيها هم هن احنا نحن انت انتم كان صار".split())
+def best_take(cands):
+    """4.70: الإعادة الأنظف مو الأخيرة: الكلام الفعلي (بدون الحشو والكلمات المتلعثمة) لازم 80% من أكملها، وبعدها الأعلى:
+    الاكتمال والوضوح، ناقص الحشو والتلعثم والتردد (وقفات 0.25 إلى 0.45 ث بنص الجملة)، وميزة صغيرة للأخيرة. يرجع رقمها بالقائمة."""
+    def parts(it):
+        ws_ = it.get("_w") or []; fl = sum(1 for w in ws_ if norm(w["t"]) in HES); st = sum(len(str(c.get("text", "")).split()) for c in stutters(ws_, "x") if c.get("kind") == "stutter")
+        hz = sum(1 for a, b in zip(ws_, ws_[1:]) if 0.25 < b["s"] - a["e"] <= 0.45); return max(0, it["n"] - fl - st), fl, st, hz
+    P = [parts(it) for it in cands]; mx = max([p[0] for p in P] + [1]); last = len(cands) - 1
+    ok = [i for i, it in enumerate(cands) if P[i][0] >= 0.8 * mx and it["p"] >= 0.45]
+    if not ok: return max(range(len(cands)), key=lambda i: (cands[i]["n"], i))
+    return max(ok, key=lambda i: (45 * P[i][0] / mx + 25 * cands[i]["p"] - 6 * P[i][1] - 5 * P[i][2] - 4 * P[i][3] + (3 if i == last else 0), i))
+def frag(w, x, y):
+    """الكلمة الأولى قطعة مبتورة من الثانية؟ («ك… كلمة»، «الكتا… الكتاب»). الكلمة الكاملة الشائعة ما تنحسب."""
+    if not x or not y.startswith(x) or len(y) - len(x) < 1 or x in FULLW: return False
+    return len(x) <= 3 or str(w.get("t", "")).endswith(("..", "…", "-", "ـ")) or (w.get("p") is not None and w.get("p") < 0.4)
 def stutters(ws, pid="0"):
     """التلعثم داخل المحاولة: كلمة أو كلمتين أو ثلاث تتكرر بعد تردد (وقفة صغيرة، كلمة مقطوعة، «آ» بينهم)، و«آ امم» بنص الكلام.
     التكرار السلس للتأكيد («قوية قوية»، «خلصنا خلصنا منها») ما ينقص."""
@@ -198,7 +213,7 @@ def stutters(ws, pid="0"):
         for L in (3, 2, 1):
             if p + 2 * L > len(idx): continue
             A, B = idx[p:p + L], idx[p + L:p + 2 * L]
-            same = all(tk[x] == tk[y] or (len(tk[x]) >= 2 and tk[y].startswith(tk[x])) for x, y in zip(A, B))
+            same = all(tk[x] == tk[y] or frag(ws[x], tk[x], tk[y]) for x, y in zip(A, B))
             if not same: continue
             gap = ws[B[0]]["s"] - ws[A[-1]]["e"]
             cut = ws[A[-1]]["t"].endswith(("..", "…", "-", "ـ")) or any(tk[x] != tk[y] for x, y in zip(A, B)) or ws[A[-1]]["p"] < 0.4

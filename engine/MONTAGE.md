@@ -107,6 +107,7 @@ python3 scripts/01_cut_plan.py <work>
 ```bash
 ffmpeg -v error -i <work>/src.mov -vn -ac 1 -ar 16000 -y <work>/a.wav
 python3 -m whisper <work>/a.wav --language ar --model medium --word_timestamps True \
+  --condition_on_previous_text False --hallucination_silence_threshold 2 \
   --output_format json --output_dir <work> --fp16 False --verbose False > <work>/whisper.log 2>&1
 ```
 ياخذ دقايق — شغّله بالخلفية وقل له كم يتوقع. لو فشل: `tail -5 <work>/whisper.log`.
@@ -271,7 +272,7 @@ python3 scripts/09_srt.py <work> ad-master
 3. **الألوان من `theme.json` لا غير** — لا لون ثابت بالكود.
 4. **صفر تعديل لوني على صورته** — لا تدرّج ولا صبغة ولا LUT ولا بلر (`grade:false`)، إلا بطلب صريح منه. الألوان للكروت والنصوص فقط.
 5. **آيفون HDR → محوّل أبل إلزامياً** (`03_cut_zoom.py` يكشفه ويبني `hdr2sdr.swift`) — التحويل الساذج يبهّت الصورة فيحسبها «تعديلاً لونياً».
-6. **صحّح تفريغ وِسبر** قبل الكابشن، و**لا تخترع كلاماً ما قاله** — لو ما تعرف شي، عمّم بدل ما تخمّن.
+6. **صحّح تفريغ وِسبر** قبل الكابشن، و**لا تخترع كلاماً ما قاله**. الكابشن حرفي: لا مرادف، لا تحويل للفصحى، لا زيادة ولا نقص. صحّح بس السماع الغلط الواضح والأسماء — لو ما تعرف شي، عمّم بدل ما تخمّن.
 7. **لا نشر ولا جدولة** — التسليم ملف بس.
 8. **«ورا الشخص» و«طبقات» وأنماط القصّ مرة أو مرتين بالفيديو** — أكثر يفقد أثره. وكل `build`/`stack` = القائمة الكاملة لنوعه (اللي ما ذكرته ينشال)، والنص القدّامي ما ينكتب على الوجه أبداً.
 9. **سمّها «ملف صوتي بالخلفية» لا «موسيقى»** — المحتوى يحدّده هو، وانت تحطه بـ`bg-audio.mp3` كما هو.
@@ -288,7 +289,7 @@ node scripts/08_safe_check.js <work> --shot
 1. **المزامنة** — فرّغ الناتج وقارن بدايات الجمل بـ`caps.json`؛ الفرق أقل من 0.1 ثانية:
 ```bash
 ffmpeg -v error -i <work>/ad-final.mp4 -vn -ac 1 -ar 16000 -y <work>/fa.wav
-python3 -m whisper <work>/fa.wav --language ar --model small --output_format json --output_dir <work> --fp16 False --verbose False > <work>/whisper.log 2>&1
+python3 -m whisper <work>/fa.wav --language ar --model small --condition_on_previous_text False --output_format json --output_dir <work> --fp16 False --verbose False > <work>/whisper.log 2>&1
 ```
 2. **الصوت** — سطر `06b_master.sh` الأخير: ≈ -14 LUFS والذروة -1.5 dBTP أو أقل.
 3. **العين** — ورقة وحدة بـ6 لقطات من `ad-final.mp4`، تُشاف فعلاً. وإذا فيه مؤثرات نبضة: `beatfx-sheet.jpg` كمان (مونتاج: `--sheet` · كلام: `--check` على الفيديو الجاهز).

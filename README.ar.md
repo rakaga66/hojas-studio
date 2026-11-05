@@ -24,6 +24,12 @@
 
 <p align="center"><img src="docs/assets/demo.gif" alt="مقطع منتجه Hojas Studio" width="270"><br><sub>هذا المقطع منتجه Hojas Studio. <a href="docs/assets/demo.mp4">شوف المقطع كامل</a></sub></p>
 
+## جديد في 4.70: السبورة
+
+<p align="center"><img src="docs/assets/board.jpg" alt="سبورة طباشير يرسمها Claude فوق مقطع" width="100%"></p>
+
+تكلم عن فكرة، وClaude يحوّلها لشرح متحرك بالطباشير فوق مقطعك: النص ينكتب لحظة ما تقوله، والرسم ينرسم خط خط، و32 شخصية و43 أيقونة وصور حقيقية توضحها. تغطي الشاشة، أو فوق ووجهك تحت، أو كرت فوق الأداة الحقيقية. Claude يختار اللحظات اللي تحتاج شرح، ويفحص إن ولا شي يغطي على شي. والتفريغ صار حرفي: ما يكرر ولا يخترع كلام.
+
 ## وش فيه
 
 <p align="center"><img src="docs/assets/show.jpg" alt="مزايا Hojas Studio" width="100%"></p>

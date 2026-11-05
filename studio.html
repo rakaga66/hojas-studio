@@ -201,6 +201,7 @@ mark{background:rgba(224,165,58,.4);color:inherit;border-radius:3px}
 .bgm-image{background:repeating-linear-gradient(45deg,#3a4a5a 0 8px,#46586a 8px 16px)!important}
 .pv.bhd{background:#2a2a33!important}.pv.bhd b{position:absolute;top:5px;left:0;right:0;text-align:center;font-size:20px;font-weight:900;color:#FFD21F;line-height:1}
 .fxp-facezoom{animation:fxZoom 2s ease-in-out infinite;transform-origin:50% 38%}
+.fxp-cutzoom{animation:fxCut 2.4s steps(1,end) infinite;transform-origin:50% 38%}
 .fxp-spotlight::after{background:radial-gradient(circle at 50% 40%,transparent 24%,rgba(0,0,0,.86) 62%)}
 .fxp-pulse{animation:fxPulse 1s ease-in-out infinite}.fxp-tilt{animation:fxTilt 2.2s ease-in-out infinite}
 .fxp-rgb{animation:fxRgb .9s steps(2) infinite}.fxp-vhs{filter:saturate(1.5) contrast(1.1)}
@@ -215,6 +216,7 @@ mark{background:rgba(224,165,58,.4);color:inherit;border-radius:3px}
 @keyframes fxRgb{0%{filter:drop-shadow(3px 0 0 rgba(255,0,0,.7)) drop-shadow(-3px 0 0 rgba(0,120,255,.7))}50%{filter:none}}
 @keyframes fxLeak{0%{background-position:120% 0}100%{background-position:-60% 0}}@keyframes fxStrobe{0%{opacity:.75}50%{opacity:0}}
 @keyframes fxZoom{0%,100%{transform:scale(1)}50%{transform:scale(1.28)}}
+@keyframes fxCut{0%,100%{transform:scale(1)}50%{transform:scale(1.22)}}
 @keyframes fxPunch{0%{transform:scale(1)}12%{transform:scale(1.3)}40%,100%{transform:scale(1)}}
 @keyframes fxShake{0%,40%,100%{transform:translate(0,0) scale(1.06)}8%{transform:translate(-4px,2px) scale(1.06)}16%{transform:translate(4px,-3px) scale(1.06)}24%{transform:translate(-3px,-2px) scale(1.06)}32%{transform:translate(3px,3px) scale(1.06)}}
 @keyframes fxFlash{0%{opacity:.9}35%,100%{opacity:0}}
@@ -624,6 +626,8 @@ body.drawing #sideTools,body.drawing #giz,body.drawing #ticker,body.drawing #ges
   body:not(.m) #tabs button[data-tab="notes"]{--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%205h16v11H10l-5%204v-4H4z%22/%3E%3C/svg%3E")}
   body:not(.m) #tabs button[data-tab="claude"]{--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22black%22%20d%3D%22m4.7144%2015.9555%204.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608%201.5179.1032%202.2767.1578%201.6514.0972%202.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973%209.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686%201.9064%201.4754%202.4893%201.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335%206.6997%200l.9957.1336.419.3642.6192%201.4147%201.0018%202.2282%201.5543%203.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853%201.8517-.5586%202.9021-.3643%201.9429h.2125l.2429-.2429.9835-1.3053%201.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759%201.1293-.34%201.1657-1.0625%201.3478-.8804%201.1414-1.2628%201.7-.7893%201.36.0729.1093.1882-.0183%202.8535-.607%201.5421-.2794%201.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607%201.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929%201.0686%202.0035%201.8092%202.5075%202.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496%202.3436%203.5214.1214%201.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38%2017.959l-1.1414-1.9428-.1397.079-.674%207.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328%201.9672-2.1796%202.9446-1.7243%201.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889%202.386-3.0357%201.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385%204.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429%201.9064-1.3114Z%22%2F%3E%3C%2Fsvg%3E")}
   body:not(.m) #tabs button[data-tab="claude"]::before{background:#D97757;opacity:1}   /* 4.50: المساعد بشعار Claude */
+  body.cx:not(.m) #tabs button[data-tab="claude"]{--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22black%22%20d%3D%22M22.2819%209.8211a5.9847%205.9847%200%200%200-.5157-4.9108%206.0462%206.0462%200%200%200-6.5098-2.9A6.0651%206.0651%200%200%200%204.9807%204.1818a5.9847%205.9847%200%200%200-3.9977%202.9%206.0462%206.0462%200%200%200%20.7427%207.0966%205.98%205.98%200%200%200%20.511%204.9107%206.051%206.051%200%200%200%206.5146%202.9001A5.9847%205.9847%200%200%200%2013.2599%2024a6.0557%206.0557%200%200%200%205.7718-4.2058%205.9894%205.9894%200%200%200%203.9977-2.9001%206.0557%206.0557%200%200%200-.7475-7.0729zm-9.022%2012.6081a4.4755%204.4755%200%200%201-2.8764-1.0408l.1419-.0804%204.7783-2.7582a.7948.7948%200%200%200%20.3927-.6813v-6.7369l2.02%201.1686a.071.071%200%200%201%20.038.052v5.5826a4.504%204.504%200%200%201-4.4945%204.4944zm-9.6607-4.1254a4.4708%204.4708%200%200%201-.5346-3.0137l.142.0852%204.783%202.7582a.7712.7712%200%200%200%20.7806%200l5.8428-3.3685v2.3324a.0804.0804%200%200%201-.0332.0615L9.74%2019.9502a4.4992%204.4992%200%200%201-6.1408-1.6464zM2.3408%207.8956a4.485%204.485%200%200%201%202.3655-1.9728V11.6a.7664.7664%200%200%200%20.3879.6765l5.8144%203.3543-2.0201%201.1685a.0757.0757%200%200%201-.071%200l-4.8303-2.7865A4.504%204.504%200%200%201%202.3408%207.872zm16.5963%203.8558L13.1038%208.364%2015.1192%207.2a.0757.0757%200%200%201%20.071%200l4.8303%202.7913a4.4944%204.4944%200%200%201-.6765%208.1042v-5.6772a.79.79%200%200%200-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759%200%200%200-.7854%200L9.409%209.2297V6.8974a.0662.0662%200%200%201%20.0284-.0615l4.8303-2.7866a4.4992%204.4992%200%200%201%206.6802%204.66zM8.3065%2012.863l-2.02-1.1638a.0804.0804%200%200%201-.038-.0567V6.0742a4.4992%204.4992%200%200%201%207.3757-3.4537l-.142.0805L8.704%205.459a.7948.7948%200%200%200-.3927.6813zm1.0976-2.3654l2.602-1.4998%202.6069%201.4998v2.9994l-2.5974%201.4997-2.6067-1.4997Z%22%2F%3E%3C%2Fsvg%3E")}
+  body.cx:not(.m) #tabs button[data-tab="claude"]::before{background:var(--tx,#fff)}   /* 4.61: المساعد بشعار Codex */
   body:not(.m) #tabs button[data-tab="plan"]{--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%224%22%20y%3D%224%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221%22/%3E%3Crect%20x%3D%224%22%20y%3D%2214%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221%22/%3E%3Cpath%20d%3D%22M14%207h6M14%2017h6%22/%3E%3C/svg%3E")}
   body:not(.m) #tabs button[data-tab="proj"]{--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207a2%202%200%200%201%202-2h4l2%202h8a2%202%200%200%201%202%202v8a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2z%22/%3E%3C/svg%3E")}
   body:not(.m) #binTabs button[data-ltab="takes"]{--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%206h10M4%2012h7M4%2018h10M16%2012l2%202%204-4%22/%3E%3C/svg%3E")}
@@ -677,7 +681,7 @@ body:not(.m) #mPlay2{background:var(--y)!important}
 body:not(.m) .clip.image,body:not(.m) .clip.viz,body:not(.m) .clip.split,body:not(.m) .clip.pip,body:not(.m) .clip.bg{background:#4f7aa8}
 .clip.text,.clip.lt,.clip.mark,.clip.mg,.clip.kinetic,.clip.desk{background:#9a7b4f}
 .clip.draw,.clip.anno,body:not(.m) .clip.draw{background:#6b7d50}
-.clip.fx,.clip.cursor{background:#5e5d58}
+.clip.fx,.clip.cursor,.clip.speed{background:#5e5d58}
 .clip.sfx{background:#7d6a8f}
 .clip.outro{background:#3a3937}
 /* ═══════════ 4.18: وضعين بصفحة وحدة: «Claude يمنتج» و«مونتاج يدوي» ═══════════ */
@@ -961,6 +965,14 @@ body.jobbusy #tl{pointer-events:none;opacity:.55;transition:opacity .2s}
 [dir=ltr] #stepnews{transform:translate(-50%,-12px)}
 #stepnews.on{opacity:1;transform:translate(50%,0)}[dir=ltr] #stepnews.on{transform:translate(-50%,0)}
 #stepnews b{color:var(--y)}#stepnews span{color:var(--tx)}
+/* 4.60: المشروع العرضي (يوتيوب) */
+body.land #wrap{height:auto;width:100%;max-height:100%}
+body.land #wrap:fullscreen #frame,body.land #wrap:-webkit-full-screen #frame{aspect-ratio:16/9;width:100%;height:auto;left:0;top:50%;transform:translateY(-50%)}
+.cvopts{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cvopt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;text-align:center;white-space:normal}.cvopt.on{border-color:var(--y);background:rgba(217,119,87,.1)}
+.cvopt i{display:block;border:2px solid currentColor;border-radius:3px;opacity:.8}.cvopt i.v{width:14px;height:24px}.cvopt i.l{width:28px;height:16px}.cvopt b{font-size:12.5px}.cvopt small{font-size:11px;color:var(--mut);line-height:1.5}
+/* 4.60: تحديد أكثر من عنصر */
+#msbox{position:fixed;z-index:60;border:1.5px solid var(--y);background:rgba(217,119,87,.14);border-radius:4px;pointer-events:none}
+.clip.msel{outline:2px solid var(--y);outline-offset:-2px}.clip.mhot{outline:2px dashed var(--y);outline-offset:-2px}
 /* كل الأزرار والخطوط أصغر */
 body:not(.m){font-size:13px}
 body:not(.m) button{font-size:12px;padding:4px 9px}
@@ -974,6 +986,7 @@ body:not(.m) .chips button{font-size:11.5px;padding:3px 8px}
 body:not(.m) .sec h4{font-size:12.5px}
 body:not(.m) .hint{font-size:11.5px}
 body:not(.m) #tlbar button{font-size:11.5px;padding:3px 8px}
+.bdpv{background:#2B4A3F!important;position:relative;overflow:hidden}.bdpv i{position:absolute;border:2px solid rgba(243,241,231,.85);border-radius:4px}.bdpv b{position:absolute;inset:auto 10% 8% 10%;height:34%;background:#8d8d9b;border-radius:3px;opacity:.55}.bdpv em{position:absolute;inset:38% 0 auto 0;text-align:center;font-style:normal;font-weight:800;font-size:11px;color:#F6C94E}.bdsc{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--bd);border-radius:9px;margin-bottom:6px;cursor:pointer;font-size:12.5px}.bdsc:hover{background:var(--s2)}.bdsc b{font-variant-numeric:tabular-nums;color:var(--mut);font-weight:600}.bdsc span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bdsc small{color:var(--mut)}
 </style>
 </head>
 <body>

@@ -28,6 +28,7 @@
 | | `layer . add type=fx fx=punch s=6.1 e=7.4 amount=0.7` |
 | | `layer . list` · `layer . set L3 y=0.4` · `layer . rm L3` |
 | صيغ الهوك | `hook . set "صيغة 1" "صيغة 2" "صيغة 3"` · `hook . active 2` |
+| شرح بالسبورة (طباشير ينكتب، رسم، شخصيات) | اقرأ `<engine>/references/board.md` كامل، اكتب JSON، ثم `board . add boards.json` و`board . check` لين يقول سليمة |
 | فحص الاحتفاظ والحشو والإعادات ومدة المقطع مقابل منصاته | `check .` |
 | تقص من الفيديو والصوت | `remove . --cards 3 7` · `remove . --ranges 4.2-5.1` · `remove . --fillers` |
 | الملاحظات | `notes . list` ثم لكل وحدة `notes . done <id> "وش سويت"` |

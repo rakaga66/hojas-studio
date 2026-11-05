@@ -24,7 +24,7 @@ def nav(cur, cls_nav="nav", cls_btn="btn btn-primary"):
 def page(name, body, size):
     title, desc, cur = PAGES[name]
     return f'''<!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-ver="{VER_SHORT}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

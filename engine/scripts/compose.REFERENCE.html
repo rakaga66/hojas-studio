@@ -65,7 +65,7 @@ function nsh(){X.shadowColor='transparent';X.shadowBlur=0;X.shadowOffsetY=0;}
 function card(x,y,w,h,r,al){X.save();X.globalAlpha*=(al===undefined?1:al);sh(44,18,0.20);X.fillStyle=cBG(0.97);rr(x,y,w,h,r);X.fill();nsh();X.strokeStyle=cINK(0.09);X.lineWidth=2.5;rr(x,y,w,h,r);X.stroke();X.restore();}
 function T(s,x,y,f,c,al,dir){X.save();X.font=f;X.fillStyle=c;X.textAlign=al||'center';X.textBaseline='middle';if(dir)X.direction=dir;X.fillText(s,x,y);X.restore();}
 /* ---------- video staging ---------- */
-const R_FULL={x:0,y:0,w:1080,h:1920,r:0};
+const R_FULL={x:0,y:0,w:W,h:H,r:0};
 const R_STAGE={x:190,y:470,w:700,h:620,r:44};
 const R_SIDE={x:120,y:480,w:840,h:560,r:44};
 /* الفيديو تحت والشرح فوق — للحظات المعلومات الكثيرة. يدخل حزام انستقرام عن قصد:
@@ -76,7 +76,7 @@ const R_LOWER={x:350,y:1370,w:380,h:520,r:32};   /* كرت صغير تحت — �
    + كابشن تحت = ثلاث نقاط تركيز، المشاهد يتوه). R_STAGE/R_SIDE باقيتان للتوافق فقط. */
 const R_DOWN={x:214,y:760,w:652,h:1160,r:40};
 /* 📱 استوديو الجوال (16 سبتمبر): المشاهد والملصقات وإطفاء «ورا الراس» تجي من studio.json عبر init({studio}) */
-let BEHIND_OFF=[]; const R_COLLAGE={x:0,y:1920,w:1080,h:1920,r:0};   /* كولاج: الفيديو تحت الشاشة، الشخص مقصوص فوق ورقة */
+let BEHIND_OFF=[]; const R_COLLAGE={x:0,y:H,w:W,h:H,r:0};   /* كولاج: الفيديو تحت الشاشة، الشخص مقصوص فوق ورقة */
 let BROLL=[];   /* لقطات بي-رول من الاستوديو: {k,s,e,mode:'full'|'card'} */
 /* ═══ مشاهد الرسم الخاصة بالمشروع — SCENE_LIST (فاضية افتراضياً) ═══
    المحرّك ما يرسم أي مشهد مخصص إلا اللي تسجّله أنت. كل عنصر: [اسم, دالة(t), طبقة?]
@@ -97,13 +97,13 @@ let STICK=[];
 /* 🆕 v2.5 «شرح كامل» (R_OFF): المتحدث يختفي — كرته ينزلق تحت الشاشة (نفس مقاس R_LOWER بس y=1920)
    والشاشة كلها للرسم. صوته يكمّل والكابشن يبقى تحت عند 1460. مرة أو مرتين بالفيديو، 4-8 ثوانٍ، عند
    الأرقام والقوائم — لا بالهوك. مثال بالمشاهد: {s:12.4,e:18.9,m:R_OFF} */
-const R_OFF={x:350,y:1920,w:380,h:520,r:32,off:true};
+const R_OFF={x:350,y:H,w:380,h:520,r:32,off:true};
 let SCENES=[{s:0,e:99,m:R_FULL}];   /* الافتراضي: ملء الشاشة طول الفيديو. تخطيط المشاهد يجي من studio.json ← scenes أو تكتبه هني لمشروعك.
                                        (تخطيط المثال القديم صار بـcompose.EXAMPLES.js ← EXAMPLE_LAYOUT) */
 const TR=0.42;
 /* الكرت المرن: يصغر نسبة وتناسب (9:16) حسب أسفل الرسم (gb) وعدد أسطر الكابشن بهاللحظة — فلا يتزاحم شي */
 const CAPH=l=>l*LH+PADY*2;
-function rDown(gb,lines){const top=gb+40+CAPH(lines)+50;return {x:0,y:top,w:1080,h:1920-top,r:0};}
+function rDown(gb,lines){const top=gb+40+CAPH(lines)+50;return {x:0,y:top,w:W,h:H-top,r:0};}
 let _RES=false;
 function resolveScenes(){ if(_RES||!CAPS.length)return; _RES=true;
   SCENES.forEach(s=>{ if(s.m!==R_DOWN)return; const gb=s.gb||500; let lines=1;
@@ -119,7 +119,7 @@ function vrect(t){
   return {x:lerp(a.x,b.x,k),y:lerp(a.y,b.y,k),w:lerp(a.w,b.w,k),h:lerp(a.h,b.h,k),r:lerp(a.r,b.r,k)};
 }
 function drawVideo(t){
-  const R=vrect(t), sw=VF.naturalWidth||1080, shh=VF.naturalHeight||1920;
+  const R=vrect(t), sw=VF.naturalWidth||W, shh=VF.naturalHeight||H;
   const sc=Math.max(R.w/sw,R.h/shh), cw=R.w/sc, ch=R.h/sc;
   const sx=(sw-cw)/2, sy=(shh-ch)*FACE_ANCH;
   X.save();
@@ -177,7 +177,7 @@ function badge(t){
   if(t>VEND-0.3)a*=1-pr(t,VEND-0.3,VEND);
   if(a<=0)return; X.save();X.globalAlpha=a;
   X.font='700 30px '+FONT;const s=HANDLE;
-  const tw=X.measureText(s).width,lw=42,g=15,p=30,w=lw+g+tw+p*2,h=76,x=540-w/2,y=190;   /* 190 لا 74: أعلى الشاشة يغطيه انستقرام */
+  const tw=X.measureText(s).width,lw=42,g=15,p=30,w=lw+g+tw+p*2,h=76,x=(W/2)-w/2,y=190;   /* 190 لا 74: أعلى الشاشة يغطيه انستقرام */
   sh(26,10,0.16);X.fillStyle=cBG(0.94);rr(x,y,w,h,h/2);X.fill();nsh();
   X.strokeStyle=cINK(0.08);X.lineWidth=2;rr(x,y,w,h,h/2);X.stroke();
   if(LOGO.naturalWidth) X.drawImage(LOGO,x+w-p-lw,y+(h-lw)/2,lw,lw);
@@ -248,10 +248,10 @@ function caption(t){
       let lift=0; if(act&&!i.fx){const k=Math.min(1,(t-i.s)/0.12);lift=-6*Math.sin(k*Math.PI);}
       if(f.stretch!==undefined&&f.stretch<1&&_pts(i.t).length){ /* تمدد: الكلمة تبقى بمكانها، ونسختها الذهبية تتمدد بالكشيدة فوق الكابشن كبطلة — فقط لو فيها موضع كشيدة صالح */
         X.save(); X.font='900 '+Math.round(fs*1.35)+'px '+FONT; const bw=X.measureText(i.t).width; X.globalAlpha=Math.min(1,f.stretch*6,(1-f.stretch)*6);
-        stretchWord({...i,w:bw},540+bw/2+60,cy-fs*2.1,Math.round(fs*1.35),f.stretch,ACC); X.restore(); }
+        stretchWord({...i,w:bw},(W/2)+bw/2+60,cy-fs*2.1,Math.round(fs*1.35),f.stretch,ACC); X.restore(); }
       if(f.slam!==undefined&&f.slam<1){ /* ضربة: الكلمة تهبط ضخمة من فوق بالنص وتضرب ثم تصغر لمكانها */
         const k=f.slam; const big=k<0.35; const sc0=big?(3.2-2.0*ease(k/0.35)):lerp(1.2,1,ease((k-0.35)/0.65)); const cy0=big?lerp(760,cy,ease(k/0.35)):cy; const jit=(k>0.33&&k<0.5)?Math.sin(k*300)*8*(1-(k-0.33)/0.17):0;
-        X.save(); X.translate(540+jit,cy0); X.scale(sc0,sc0); X.translate(-540,-cy0); X.shadowColor='rgba(0,0,0,0.8)';X.shadowBlur=30;X.shadowOffsetY=8; X.fillStyle=ACC; X.textAlign='center'; X.fillText(i.t,540,cy0); X.restore(); return; }
+        X.save(); X.translate((W/2)+jit,cy0); X.scale(sc0,sc0); X.translate(-(W/2),-cy0); X.shadowColor='rgba(0,0,0,0.8)';X.shadowBlur=30;X.shadowOffsetY=8; X.fillStyle=ACC; X.textAlign='center'; X.fillText(i.t,(W/2),cy0); X.restore(); return; }
       X.save(); const cxw=x-i.w/2; X.translate(cxw+f.dx,cy+lift+f.dy); X.scale(f.ps,f.ps); X.translate(-cxw,-(cy+lift));
       if(f.clip<1){X.beginPath();X.rect(x-i.w*f.clip-4,cy-fs,i.w*f.clip+8,fs*2);X.clip();}
       if(CAPSTYLE==='bar'&&act){ X.fillStyle=ACC; rr(x-i.w-16,cy+lift-fs*0.66,i.w+32,fs*1.28,18); X.fill(); }
@@ -263,12 +263,12 @@ function caption(t){
       X.restore(); };
     if(CAPSTYLE==='big'){ /* كلمة وحدة ضخمة بالنص — الكلمة المنطوقة الحين */
       const cur=c.w.filter(w=>t>=w.s).slice(-1)[0]; if(!cur) return;
-      let fs=170; X.font='900 '+fs+'px '+FONT; while(X.measureText(cur.t).width>960&&fs>70){fs-=10;X.font='900 '+fs+'px '+FONT;}
+      let fs=170; X.font='900 '+fs+'px '+FONT; while(X.measureText(cur.t).width>(H/2)&&fs>70){fs-=10;X.font='900 '+fs+'px '+FONT;}
       const wv={...cur,w:X.measureText(cur.t).width}; const k=ease(Math.min(1,(t-cur.s)/0.18));
       const _Rb=vtarget(t), _yb=(_Rb.y>700&&!_Rb.off)?Math.max(260,_Rb.y-120):1200;   /* 23 سبتمبر: ما يطيح على وجهه بوضع الكرت */
       X.save(); X.globalAlpha=a*k; X.textAlign='right'; X.textBaseline='middle';
-      X.translate(540,_yb); X.scale(0.85+0.15*k,0.85+0.15*k); X.translate(-540,-_yb);
-      drawWord(wv,540+wv.w/2,_yb,fs); X.restore(); return; }
+      X.translate((W/2),_yb); X.scale(0.85+0.15*k,0.85+0.15*k); X.translate(-(W/2),-_yb);
+      drawWord(wv,(W/2)+wv.w/2,_yb,fs); X.restore(); return; }
     let FS2=84, LL=null; const src=CAPSTYLE==='type'?c.w.filter(w=>t>=w.s):c.w;
     if(!src.length) return;
     for(let tr=0;tr<6;tr++){ X.font='900 '+FS2+'px '+FONT;
@@ -282,10 +282,10 @@ function caption(t){
     /* ⛔ قاعدة هوجاس (23 سبتمبر): الكابشن ما ينكتب على وجهه أبداً. الستايلات بلا كرت كانت تثبّت عند 1400
        مهما كان وضع الفيديو، فبوضع الكرت (R_DOWN/R_LOWER) تطيح الكلمات على وجهه. الحين تطلع فوق الكرت. */
     const _Rc=vtarget(t), by2=(_Rc.y>700&&!_Rc.off)?Math.max(200,_Rc.y-46-bh2):(1400-bh2);
-    X.save();X.globalAlpha=a;X.translate(540,by2+bh2/2+dy);X.scale(sc,sc);X.translate(-540,-(by2+bh2/2));
+    X.save();X.globalAlpha=a;X.translate((W/2),by2+bh2/2+dy);X.scale(sc,sc);X.translate(-(W/2),-(by2+bh2/2));
     X.textAlign='right';X.textBaseline='middle'; X.font='900 '+FS2+'px '+FONT;
     let lastX=null,lastY=null;
-    LL.forEach((ln,li)=>{let x=540+ln.w/2;const cy=by2+LH2*li+LH2/2;
+    LL.forEach((ln,li)=>{let x=(W/2)+ln.w/2;const cy=by2+LH2*li+LH2/2;
       for(const i of ln.items){ if(CAPSTYLE==='type'&&t<i.s) break; drawWord(i,x,cy,FS2); lastX=x-i.w; lastY=cy; x-=i.w+GAP2;}});
     if(CAPSTYLE==='type'&&lastX!==null&&Math.floor(t*3)%2===0){ X.fillStyle=ACC; X.fillRect(lastX-18,lastY-FS2*0.55,8,FS2*1.1); }
     X.restore(); return; }
@@ -293,12 +293,12 @@ function caption(t){
   const _R=vtarget(t), LOW=_R.y>700&&!_R.off;   /* R_OFF: الكابشن يبقى تحت عند 1460 · مستطيل الهدف لا المتحرّك: الكابشن يثبت بمكانه من أول فريم بلا قفزة */          /* R_DOWN أو R_LOWER → الكابشن فوق كرت الفيديو */          /* الفيديو تحت → الكابشن فوقه */
   const CUT=(cutoutActive(t)||headoutActive(t))&&PTOP>200;   /* الكابشن فوق راسه بالوضعين */
   const SEAM=0;   /* ⛔ 23 سبتمبر: كان الكرت يركب 42٪ منه على حافة الفيديو فيغطي جبهة المتحدث — الحين فوق الكرت بالكامل */
-  const bx=540-bw/2,by=(CUT?PTOP-46:(LOW?_R.y-60+SEAM:1460))-bh;   /* 1460 عادةً · وعلى حافة الفيديو بوضع «الفيديو تحت» */
-  X.save();X.globalAlpha=a;X.translate(540,by+bh/2+dy);X.scale(sc,sc);X.translate(-540,-(by+bh/2));
+  const bx=(W/2)-bw/2,by=(CUT?PTOP-46:(LOW?_R.y-60+SEAM:1460))-bh;   /* 1460 عادةً · وعلى حافة الفيديو بوضع «الفيديو تحت» */
+  X.save();X.globalAlpha=a;X.translate((W/2),by+bh/2+dy);X.scale(sc,sc);X.translate(-(W/2),-(by+bh/2));
   sh(48,20,0.30);X.fillStyle=cBG(0.96);rr(bx,by,bw,bh,38);X.fill();nsh();
   X.strokeStyle=cINK(0.09);X.lineWidth=2.5;rr(bx,by,bw,bh,38);X.stroke();
   X.font='800 '+FS+'px '+FONT;X.textAlign='right';X.textBaseline='middle';
-  L.forEach((ln,li)=>{let x=540+ln.w/2;const cy=by+PADY+LH*li+LH/2;
+  L.forEach((ln,li)=>{let x=(W/2)+ln.w/2;const cy=by+PADY+LH*li+LH/2;
     for(const i of ln.items){const act=t>=i.s&&t<i.e,sp=t>=i.s;let lift=0;
       if(act){const k=Math.min(1,(t-i.s)/0.1);lift=-5*Math.sin(k*Math.PI);}
       if(i.hot&&sp){const k=Math.min(1,(t-i.s)/0.16),gw=(i.w+28)*ease(k),gh=FS+21;
@@ -367,12 +367,12 @@ function _tint(C,cw,color){ const {off,tw,k0,k1}=C; const rightW=tw-k1; const tm
 function _layout(word,font,sp,gap){
   X.font=font;
   const p=_pts(word); const k=X.measureText('اـــا').width-X.measureText('اــا').width;
-  if(!p.length||k<=0){const w=X.measureText(word).width;return{full:word,x:540+w/2,left:540-w/2};}
+  if(!p.length||k<=0){const w=X.measureText(word).width;return{full:word,x:(W/2)+w/2,left:(W/2)-w/2};}
   const at=p[p.length-1], pre=word.slice(0,at), suf=word.slice(at);
   const Wp=X.measureText(pre+'ـ').width-k, Ws=X.measureText('ـ'+suf).width-k;
   const need=sp?(sp.R-sp.L)+gap*2:380;
   const n=Math.max(3,Math.min(70,Math.ceil(need/k)));
-  const x=sp?Math.min(W-70,sp.R+gap+Wp):540+(Wp+n*k+Ws)/2;
+  const x=sp?Math.min(W-70,sp.R+gap+Wp):(W/2)+(Wp+n*k+Ws)/2;
   return {full:pre+'ـ'.repeat(n)+suf, x, left:x-Wp-n*k-Ws};
 }
 function behindText(t){
@@ -409,7 +409,7 @@ function behindText(t){
     const rightW=C.tw-C.k1, leftW=C.k0, xr=headR+gap;               /* بداية الكلمة يمين الراس */
     const dark=_bgLum(y,fs*0.8)>0.5, col=dark?INK:BG;
     const tmp=_tint(C,cw,col); const yy=y-C.off.height/2;
-    X.save(); X.globalAlpha=a; X.translate(540,y); X.scale(0.94+0.06*a,0.94+0.06*a); X.translate(-540,-y);
+    X.save(); X.globalAlpha=a; X.translate((W/2),y); X.scale(0.94+0.06*a,0.94+0.06*a); X.translate(-(W/2),-y);
     X.shadowColor=dark?cBG(0.9):cINK(0.6); X.shadowBlur=18; X.shadowOffsetY=6;
     X.drawImage(tmp, xr+rightW-tmp.width, yy);
     X.restore();
@@ -421,7 +421,7 @@ function behindText(t){
   FW.forEach((w,i)=>{const k=cl((t-w.s)/0.30,0,1); if(k<=0) return; const a=ease(k);
     const cy=(f?f.y+f.h*1.95:1380)+i*118; const fs=Math.round(FS0*0.48);
     X.save(); X.globalAlpha=a; X.font='900 '+fs+'px '+FONT; const tw=X.measureText(w.t).width, bw=tw+90, bh=fs*1.25;
-    X.translate(540,cy); X.scale(0.9+0.1*a,0.9+0.1*a); sh2(30,12,0.28); X.fillStyle=cBG(0.97); rr(-bw/2,-bh/2,bw,bh,bh/2); X.fill(); nsh();
+    X.translate((W/2),cy); X.scale(0.9+0.1*a,0.9+0.1*a); sh2(30,12,0.28); X.fillStyle=cBG(0.97); rr(-bw/2,-bh/2,bw,bh,bh/2); X.fill(); nsh();
     X.fillStyle=INK; X.textAlign='center'; X.textBaseline='middle'; X.fillText(w.t,0,fs*0.06); X.restore(); });
   return true;
 }
@@ -513,7 +513,7 @@ function personStage(t){
   const ph=Math.max(1,y1-y0), pw=Math.max(1,x1-x0);
   const TARGET_H=900, sc=Math.min(2.0, TARGET_H/ph);      /* طوله ~1010 بكسل — يخلي مجالاً للكابشن فوق راسه */
   const cx=(x0+x1)/2;
-  const dx=540-cx*sc, dy=(H+30)-y1*sc;                     /* أسفله يلامس أسفل الشاشة */
+  const dx=(W/2)-cx*sc, dy=(H+30)-y1*sc;                     /* أسفله يلامس أسفل الشاشة */
   PTOP=dy+y0*sc;
   X.save();
   sh(60,10,0.22);                                          /* ظل خفيف يفصله عن اللوحة */
@@ -538,14 +538,14 @@ function brFrame(k,dt,sp){const b=BR[k];if(!b)return null;const i=cl(Math.floor(
 const BRC={x:260,y:300,w:560,h:700,r:40};           /* كرت البي-رول — يشتغل مع R_LOWER (الكابشن ينزل لـ1310) */
 function brCard(k,dt,sp,a,s0,s1){const im=brFrame(k,dt,sp);if(!im)return;
   const k1=ease(pr(dt,0,0.35)), out=1-pr(dt,s1-s0-0.22,s1-s0); const al=a*k1*out, sc=lerp(0.92,1,back(k1));
-  X.save();X.globalAlpha*=al;X.translate(540,BRC.y+BRC.h/2);X.scale(sc,sc);X.translate(-540,-(BRC.y+BRC.h/2));
+  X.save();X.globalAlpha*=al;X.translate((W/2),BRC.y+BRC.h/2);X.scale(sc,sc);X.translate(-(W/2),-(BRC.y+BRC.h/2));
   sh(60,24,0.28);X.fillStyle='#000';rr(BRC.x,BRC.y,BRC.w,BRC.h,BRC.r);X.fill();nsh();
   X.save();rr(BRC.x,BRC.y,BRC.w,BRC.h,BRC.r);X.clip();
   X.drawImage(im,BRCROP.sx,BRCROP.sy,BRCROP.sw,BRCROP.sh,BRC.x,BRC.y,BRC.w,BRC.h);X.restore();
   X.strokeStyle=cINK(0.14);X.lineWidth=3;rr(BRC.x,BRC.y,BRC.w,BRC.h,BRC.r);X.stroke();X.restore();}
 /* ---------- لوحة فوق الوجه بوضع R_DOWN: ارسم اللوحة بإحداثيات 130..950 × 278..458 وهي تتكبّر 1.2 وحدها ---------- */
 function panelIn(t,s,e,fn){ if(t<s+TR-0.1||t>e)return; const k=ease(pr(t,s+TR-0.1,s+TR+0.25)), out=1-pr(t,e-0.2,e);
-  X.save();X.globalAlpha*=k*out;X.translate(540,368+(1-k)*22);X.scale(1.2,1.2);X.translate(-540,-368);fn(t);X.restore();}
+  X.save();X.globalAlpha*=k*out;X.translate((W/2),368+(1-k)*22);X.scale(1.2,1.2);X.translate(-(W/2),-368);fn(t);X.restore();}
 /* ملاحظة: اللوحة تبدأ بعد TR (0.42ث) — تنتظر الفيديو يخلص نزوله حتى ما ترتسم فوق وجهه */
 
 /* ================= SCENE GRAPHICS ================= */
@@ -558,7 +558,7 @@ function videoShift(t){ let x=0,y=0;
   return (x||y)?{x,y}:null; }
 function cracks(t){ for(const w of _fxWords(t,0.7)){ if(w.fx!=='crack') continue; const k=(t-w.s)/0.7, seed=Math.round(w.s*97);
     X.save(); X.globalAlpha=(k<0.15?k/0.15:1-Math.pow((k-0.15)/0.85,2))*0.9; X.strokeStyle='#FFFFFF'; X.lineWidth=5; X.lineJoin='round'; X.shadowColor='rgba(0,0,0,0.7)'; X.shadowBlur=10;
-    const cx=540+((seed*13)%120)-60, cy=880+((seed*7)%160)-80, n=6, L=Math.min(1,k/0.25);
+    const cx=(W/2)+((seed*13)%120)-60, cy=880+((seed*7)%160)-80, n=6, L=Math.min(1,k/0.25);
     for(let i=0;i<n;i++){ const ang=(i/n)*Math.PI*2+((seed+i*31)%100)/100; let px=cx,py=cy; X.beginPath(); X.moveTo(px,py); const segs=7;
       for(let sgm=1;sgm<=segs*L;sgm++){ const len=60+((seed*(i+1)*(sgm+3))%70); const jit=(((seed*(sgm+1)*(i+5))%100)/100-0.5)*0.9; px+=Math.cos(ang+jit)*len; py+=Math.sin(ang+jit)*len; X.lineTo(px,py); } X.stroke(); }
     X.restore(); } }
@@ -642,7 +642,7 @@ function collageScene(t){
   X.strokeStyle='rgba(0,0,0,0.06)'; X.lineWidth=2; for(let y=0;y<H;y+=64){X.beginPath();X.moveTo(0,y);X.lineTo(W,y);X.stroke();}
   const c=CAPS.find(c=>t>=c.s&&t<c.e); if(c){ X.font='900 74px '+FONT; X.textAlign='center'; X.textBaseline='middle';
     c.w.forEach((w,j)=>{ if(t<w.s) return; const k=back(cl((t-w.s)/0.3,0,1)); const tw=X.measureText(w.t).width+56, th=110;
-      const col=j%3, row=Math.floor(j/3); const x=540+(1-col)*330+((j*53)%41-20), y=330+row*150+((j*29)%23-11), rot=(((j*37)%9)-4)*Math.PI/180;
+      const col=j%3, row=Math.floor(j/3); const x=(W/2)+(1-col)*330+((j*53)%41-20), y=330+row*150+((j*29)%23-11), rot=(((j*37)%9)-4)*Math.PI/180;
       X.save(); X.translate(x,y); X.rotate(rot); X.scale(k,k); sh(26,10,0.28); X.fillStyle=(w.hot?ACC:'#FFFFFF'); rr(-tw/2,-th/2,tw,th,8); X.fill(); nsh();
       X.fillStyle=w.hot?onACC():PINK; X.fillText(w.t,0,4); X.restore(); }); }
   X.restore(); }
@@ -652,7 +652,7 @@ function stickers(t){
     const k=ease(pr(t,st.s,st.s+0.32)), out=1-pr(t,st.e-0.22,st.e); const a=k*out; if(a<=0) continue;
     const sc=(0.6+0.4*back(k))*(0.96+0.04*out), fl=Math.sin((t-st.s)*2.2)*7;
     X.save(); X.globalAlpha=a; X.font='800 74px '+FONT; const tw=X.measureText(st.t||'').width;
-    const hasI=!!st.i, bw=tw+72+(hasI?130:40), bh=130, cx=540, cy=(st.y||300)+fl;
+    const hasI=!!st.i, bw=tw+72+(hasI?130:40), bh=130, cx=(W/2), cy=(st.y||300)+fl;
     X.translate(cx,cy); X.scale(sc,sc); X.translate(-cx,-cy);
     sh(30,10,0.35); X.fillStyle='rgba(18,16,14,0.62)'; rr(cx-bw/2,cy-bh/2,bw,bh,bh/2); X.fill(); nsh();
     X.strokeStyle=ACC; X.lineWidth=3; rr(cx-bw/2,cy-bh/2,bw,bh,bh/2); X.stroke();
@@ -671,11 +671,11 @@ function outroF(t,FONT){ const s=VEND; if(t<s)return;
   X.beginPath();X.rect(0,top,W,H);X.clip();X.translate(0,top);
   const ap=d=>pr(t,s+d,s+d+0.42);
   let a=ap(0.30);
-  if(a>0&&LOGO.naturalWidth){X.save();X.globalAlpha=a;const L=180,fl=Math.sin((t-s)*1.6)*5;X.drawImage(LOGO,540-L/2,196+fl-(1-ease(a))*18,L,L);X.restore();}   /* بلا شعار = بلا رسم (كان يكسر الكرت كله) */
+  if(a>0&&LOGO.naturalWidth){X.save();X.globalAlpha=a;const L=180,fl=Math.sin((t-s)*1.6)*5;X.drawImage(LOGO,(W/2)-L/2,196+fl-(1-ease(a))*18,L,L);X.restore();}   /* بلا شعار = بلا رسم (كان يكسر الكرت كله) */
   a=ap(0.42);
   if(a>0){X.save();X.globalAlpha=a;
-    T(OUTRO_T.l1,540,470+(1-ease(a))*14,'700 40px '+FONT,MUT);
-    T(OUTRO_T.l2,540,532+(1-ease(a))*14,'700 40px '+FONT,MUT);X.restore();}
+    T(OUTRO_T.l1,(W/2),470+(1-ease(a))*14,'700 40px '+FONT,MUT);
+    T(OUTRO_T.l2,(W/2),532+(1-ease(a))*14,'700 40px '+FONT,MUT);X.restore();}
   RECAP.forEach((r,i)=>{
     const k=ap(0.62+i*0.11); if(k<=0)return;
     const cx=i%2?300:780, cy=660+Math.floor(i/2)*104;
@@ -687,17 +687,17 @@ function outroF(t,FONT){ const s=VEND; if(t<s)return;
     T(r[0],-14,3,'700 38px '+FONT,INK);X.restore();});
   a=ap(1.15);
   if(a>0){X.save();X.globalAlpha=a;const sc=(0.94+0.06*back(Math.min(1,a)))*(1+0.014*Math.sin((t-s-1.15)*2.4));
-    X.translate(540,1010);X.scale(sc,sc);X.translate(-540,-1010);
-    T(OUTRO_T.cta,540,1010,'900 88px '+FONT,INK);
+    X.translate((W/2),1010);X.scale(sc,sc);X.translate(-(W/2),-1010);
+    T(OUTRO_T.cta,(W/2),1010,'900 88px '+FONT,INK);
     X.font='900 100px '+FONT;const w=X.measureText(OUTRO_T.word).width+96;
-    sh(40,16,0.22);X.fillStyle=ACC;rr(540-w/2,1110,w,148,44);X.fill();nsh();
-    T(OUTRO_T.word,540,1186,'900 100px '+FONT,onACC());
+    sh(40,16,0.22);X.fillStyle=ACC;rr((W/2)-w/2,1110,w,148,44);X.fill();nsh();
+    T(OUTRO_T.word,(W/2),1186,'900 100px '+FONT,onACC());
     X.restore();}
   a=ap(1.42);
-  if(a>0){X.save();X.globalAlpha=a;T(OUTRO_T.sub==null?'والملف كامل يوصلك على الخاص':OUTRO_T.sub,540,1370,'700 42px '+FONT,MUT);X.restore();}
+  if(a>0){X.save();X.globalAlpha=a;T(OUTRO_T.sub==null?'والملف كامل يوصلك على الخاص':OUTRO_T.sub,(W/2),1370,'700 42px '+FONT,MUT);X.restore();}
   a=ap(1.6);
   if(a>0){X.save();X.globalAlpha=a;X.font='700 40px '+FONT;X.direction='ltr';
-    const lg=LOGO.naturalWidth?54+18:0, ht=HANDLE,hw=X.measureText(ht).width,tot=lg+hw,sx=540-tot/2;   /* بلا شعار: الحساب وحده بالنص (كان يسقط المشهد) */
+    const lg=LOGO.naturalWidth?54+18:0, ht=HANDLE,hw=X.measureText(ht).width,tot=lg+hw,sx=(W/2)-tot/2;   /* بلا شعار: الحساب وحده بالنص (كان يسقط المشهد) */
     if(lg) X.drawImage(LOGO,sx,1540-27,54,54);
     T(ht,sx+lg,1542,'700 40px '+FONT,INK,'left','ltr');X.restore();}
   X.restore();}

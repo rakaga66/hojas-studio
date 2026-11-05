@@ -87,7 +87,7 @@ def prep(W,args):
         hi=os.path.join(W,f"cam{c['id']}"); os.makedirs(hi,exist_ok=True)
         procs.append(subprocess.Popen(["ffmpeg","-v","error","-y","-ss",f"{start-c['offset']:.3f}","-t",f"{total:.3f}","-i",c["file"],"-vf",f"fps={FPS}","-q:v","3",os.path.join(hi,"%05d.jpg")]))
     # التفريغ بالتوازي مع الفريمات
-    wh=subprocess.Popen([PY,"-m","whisper",os.path.join(W,"a.wav"),"--language","ar","--model","medium","--word_timestamps","True","--output_format","json","--output_dir",W,"--fp16","False"],stdout=open(os.path.join(W,"whisper.log"),"w"),stderr=subprocess.STDOUT)
+    wh=subprocess.Popen([PY,"-m","whisper",os.path.join(W,"a.wav"),"--language","ar","--model","medium","--word_timestamps","True","--output_format","json","--output_dir",W,"--fp16","False","--condition_on_previous_text","False","--hallucination_silence_threshold","2"],stdout=open(os.path.join(W,"whisper.log"),"w"),stderr=subprocess.STDOUT)
     for p in procs: p.wait()
     for c in cams:
         lo=os.path.join(W,"lo",f"cam{c['id']}")

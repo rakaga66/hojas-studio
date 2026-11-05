@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Hojas Studio 4.48 — استوديو مونتاج بمحرّكه (مجلد engine بجنب هذا الملف، بدون أي مكتبة خارجية).
+"""Hojas Studio 4.69 — استوديو مونتاج بمحرّكه (مجلد engine بجنب هذا الملف، بدون أي مكتبة خارجية).
 
   python hs.py open   <work> [--engine <مجلد المحرّك>] [--port 8800] [--no-browser]
         يشغّل الخادم بالخلفية ويفتح المتصفح. شغّله أول ما تبدأ المونتاج، حتى قبل ما يجهز أي ملف.
@@ -33,6 +33,7 @@
   python hs.py kf     <work> <id> list | add <ث> [dx= dy= s= r= o= e=smooth|linear|back|hold] | rm <ث|all> | preset across|grow|rise|spin|pulse|sway   حركة بالمفاتيح
   python hs.py key    <work> list | <رقم|all> [off] [color=auto|green|blue|#RRGGBB] [sim= soft= spill=] [size= x= y=] | detect <لقطة>   شيل الشاشة الخضراء (4.39)
   python hs.py emoji  <work> list | on | off | set <رقم الجملة> <إيموجي|none|auto> | clear | pos word|center | anim pop|bounce|float | size | gap | only all|hot   إيموجي الكابشن (4.48)
+  python hs.py speed  <work> status | 1.15 | off | fit tiktok|instagram|x|linkedin|<ثواني>   سرعة المقطع بنفس نبرة صوتك (4.59)
   python hs.py hook   <work> set "صيغة 1" "صيغة 2" … | active <رقم> | off
   python hs.py check  <work>                         فحص الاحتفاظ + الحشو + الجمل المعادة
   python hs.py remove <work> [--cards 3 7] [--ranges 4.2-5.1 …] [--fillers] [--force]    يقص من الفيديو والصوت (يرفض الكلام المهم وآخر المقطع بدون --force)
@@ -85,7 +86,7 @@ except Exception: pass
 os.environ.setdefault("PYTHONUTF8", "1"); os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "4.56"
+VERSION = "4.70"
 HOME_CFG = os.path.join(os.path.expanduser("~"), ".hojas-studio")
 SNAP_FILES = ("caps.json", "theme.json", "studio.json", "sfx.json", "cut.json", "takes.json")
 TAG = '<script src="hs-ext.js"></script>'
@@ -210,6 +211,62 @@ def cmd_fonts(args):
     else:
         bf = brand_fonts()
         print("\n".join("%s: %s" % (k, " · ".join(str(w) for w, _ in v)) for k, v in bf.items()) if bf else "ما فيه خطوط هوية مركّبة. ركّبها: hs fonts install <zip>")
+# ── 4.60: مقاس المشروع: عمودي 9:16 (ريلز وتيك توك وشورتس) أو عرضي 16:9 (يوتيوب). اللوحة كلها تتبعه: القص والفريمات والرسم والتصدير ──
+CANVAS = {"9:16": (1080, 1920), "16:9": (1920, 1080)}
+def canvas_ar(work): c = hs_of(load_studio(work)).get("canvas"); return c if c in CANVAS else "9:16"
+def canvas_of(work): return CANVAS[canvas_ar(work)]
+def cvs(work): return "%d:%d" % canvas_of(work)   # «1080:1920» أو «1920:1080» لفلاتر ffmpeg
+def canvas_set(work, ar):
+    """يغيّر مقاس المشروع. العرضي: الكابشن بمحرّك الاستوديو (يتبع المقاس) وعرضه أوسع، ومكان الفيديو والتحريك يرجعون للأصل."""
+    st = load_studio(work); H = hs_of(st)
+    if ar == "9:16":
+        H.pop("canvas", None); cap = H.get("cap") or {}
+        if cap.get("width") == 1500: cap.pop("width", None)
+        if (H.get("frame") or {}).get("ar") == "16:9": H["frame"]["ar"] = "9:16"
+    else:
+        H["canvas"] = ar; cap = H.setdefault("cap", {}); cap["on"] = True
+        if float(cap.get("width") or 760) < 1200: cap["width"] = 1500
+        H.setdefault("frame", {})["ar"] = ar
+    for k in ("vxf", "vpos"): H.pop(k, None)
+    if isinstance(H.get("fix"), dict): H["fix"].pop("erase", None)   # مكان العنصر الممسوح يتغيّر مع القص الجديد
+    wj(J(work, "studio.json"), st); return ar
+_CVNUM = re.compile(r"(?<![\w.$])(1080|1920|540|960|19\.2(?=\s*\*)|10\.8(?=\s*\*))(?![\w.])")
+def _cv_segments(js):
+    """يقسم كود JS لأجزاء: (كود، True) أو (نص/تعليق، False) عشان ما نغيّر داخل النصوص."""
+    out, i, n, buf = [], 0, len(js), []
+    def flush(code):
+        if buf: out.append(("".join(buf), code)); buf.clear()
+    while i < n:
+        c = js[i]
+        if c in "'\"`":
+            flush(True); q = c; j = i + 1
+            while j < n:
+                if js[j] == "\\": j += 2; continue
+                if js[j] == q: j += 1; break
+                if q != "`" and js[j] == "\n": break
+                j += 1
+            out.append((js[i:j], False)); i = j; continue
+        if c == "/" and i + 1 < n and js[i + 1] == "/":
+            flush(True); j = js.find("\n", i); j = n if j < 0 else j; out.append((js[i:j], False)); i = j; continue
+        if c == "/" and i + 1 < n and js[i + 1] == "*":
+            flush(True); j = js.find("*/", i + 2); j = n if j < 0 else j + 2; out.append((js[i:j], False)); i = j; continue
+        buf.append(c); i += 1
+    flush(True); return out
+def _cv_conv(js, W, H):
+    """1080→W، 1920→H، 540→(W/2)، 960→(H/2)، 19.2*→(H/100)*، 10.8*→(W/100)* (بالكود بس)."""
+    m = {"1080": W, "1920": H, "540": "(%s/2)" % W, "960": "(%s/2)" % H, "19.2": "(%s/100)" % H, "10.8": "(%s/100)" % W}
+    return "".join(_CVNUM.sub(lambda x: m[x.group(1)], s) if code else s for s, code in _cv_segments(js))
+
+def compose_canvas(src, cw, ch):
+    """يحوّل compose لمقاسات متغيّرة مرة وحدة (نفس الأرقام بالعمودي بالضبط) ويحط المقاس. يرجّع النص الجديد."""
+    decl = re.compile(r"const W=\d+,H=\d+;")
+    def fix(m):
+        js = m.group(2)
+        if not decl.search(js): return m.group(0)
+        js = decl.sub("@@HSWH@@", js, count=1); js = _cv_conv(js, "W", "H").replace("@@HSWH@@", "const W=%d,H=%d;" % (cw, ch))
+        return m.group(1) + js + m.group(3)
+    src = re.sub(r"(<script(?![^>]*\bsrc=)[^>]*>)(.*?)(</script>)", fix, src, flags=re.S)
+    return re.sub(r'(<canvas id="cv"[^>]*?)width="\d+" height="\d+"', r'\1width="%d" height="%d"' % (cw, ch), src, count=1)
 def patch(work, quiet=False):
     """ينسخ الإضافة لمجلد الشغل ويضيف سطرها آخر compose.html. يرجّع True لو غيّر شي، None لو compose ما وُجد بعد."""
     comp = J(work, "compose.html")
@@ -221,6 +278,10 @@ def patch(work, quiet=False):
     try: brand_fonts_project(work)   # 4.9: خطوط الهوية المركّبة على الجهاز تنسخ للمشروع
     except Exception: pass
     src = open(comp, encoding="utf-8").read()
+    try:   # 4.60: مقاس اللوحة (عمودي أو عرضي)
+        new_ = compose_canvas(src, *canvas_of(work))
+        if new_ != src: src = new_; open(comp, "w", encoding="utf-8").write(src)
+    except Exception: pass
     old = "T('والملف كامل يوصلك على الخاص',540,1370"   # 3.9: السطر الصغير بكرت الختام صار يتعدّل من الاستوديو
     if old in src: src = src.replace(old, "T(OUTRO_T.sub==null?'والملف كامل يوصلك على الخاص':OUTRO_T.sub,540,1370"); open(comp, "w", encoding="utf-8").write(src)
     of_old = "function outro(t){ const s=VEND;"   # 4.1: خط كرت الختام يتغيّر من الاستوديو
@@ -396,6 +457,94 @@ def open_check(first, ev, hs, total):
     txt = bool(hk.get("on") and hk.get("items")) or any(not L.get("off") and L.get("type") in ("text", "cover", "lt") and float(L.get("s", 0)) <= 1.0 for L in hs.get("layers") or [])
     miss = (["voice"] if (first is not None and 0.7 < first <= 1.0) else []) + ([] if ch else ["change"]) + ([] if txt else ["text"])
     return {"miss": miss, "first": first, "changes": len(ch)}
+# ── 4.59: سرعة المقطع: كلامك أسرع بنفس نبرة صوتك (atempo)، والصورة والكابشن والعناصر معه، والموسيقى بسرعتها الطبيعية ──
+SPEED_MAX = 1.5
+SPEED_PRE = (1.0, 1.1, 1.15, 1.2, 1.25, 1.3)
+def speed_of(hs):
+    """سرعة التصدير (1 = عادي). تنحفظ بـ hs.speed.r، وأي قيمة غلط ترجع 1."""
+    try: r = float(((hs or {}).get("speed") or {}).get("r") or 1)
+    except (TypeError, ValueError): return 1.0
+    return 1.0 if not (r == r) or r < 1.005 else round(min(SPEED_MAX, r), 3)
+def speed_need(total, target):
+    """أقل سرعة تخلي مقطع مدته total يدخل بـ target ثانية (مقرّبة لفوق). None لو ما يحتاج أو يحتاج أكثر من الحد."""
+    try: total, target = float(total), float(target)
+    except (TypeError, ValueError): return None
+    if total <= 0 or target <= 0 or total <= target: return None
+    r = math.ceil(total / target * 100 - 1e-9) / 100.0
+    return r if r <= SPEED_MAX else None
+# ── 4.68: تسريع جزء (Speed ramp): طبقات «تسريع» (type=speed) على التايم لاين، وتنطبق بالتصدير على الخط الزمني النهائي
+#    (بعد القص)، فخريطة القص والكابشن والطبقات ما تتغيّر: الجزء يمشي أسرع بالفيديو والصوت (بنفس النبرة) والموسيقى بسرعتها.
+#    «دخول ناعم» يقسم أول وآخر الجزء لخطوات سرعة متدرجة، فالتسريع يبان مثل Speed ramp مو قفزة.
+SPART_MAX = 4.0
+SPART_PRE = (1.5, 2.0, 3.0, 4.0)
+SPART_RAMP = 0.3   # طول الدخول والخروج الناعم (ثانية)
+def speed_parts(hs):
+    """طبقات التسريع الشغالة: [(s, e, r, ramp)] مرتبة. القيم الغلط تنشال."""
+    out = []
+    for L in (hs or {}).get("layers") or []:
+        if L.get("type") != "speed" or L.get("off"): continue
+        try: s, e, r = float(L.get("s", 0)), float(L.get("e", 0)), float(L.get("r") or 2)
+        except (TypeError, ValueError): continue
+        if not (r == r) or e - s < 0.2 or r < 1.05: continue
+        out.append((max(0.0, s), e, min(SPART_MAX, r), L.get("ramp", True) is not False))
+    return sorted(out)
+def speed_segs(hs, end):
+    """الخط الزمني مقسوم لقطع بسرعة ثابتة: [(a, b, r)] من 0 لـ end. r = سرعة المقطع × سرعة الجزء (أعلى وحدة لو تداخلوا)."""
+    base = speed_of(hs); end = float(end or 0); steps = []
+    for s, e, r, ramp in speed_parts(hs):
+        if s >= end: continue
+        e = min(e, end); w = min(SPART_RAMP, (e - s) / 4.0) if ramp else 0.0
+        if w >= 0.1:
+            k = 3; d = w / k
+            for i in range(k):
+                ri = r ** ((i + 1) / (k + 1.0))
+                steps.append((s + i * d, s + (i + 1) * d, ri)); steps.append((e - (i + 1) * d, e - i * d, ri))
+            steps.append((s + w, e - w, r))
+        else: steps.append((s, e, r))
+    cuts = sorted(set([0.0, end] + [round(x, 4) for a, b, _ in steps for x in (a, b) if 0 < x < end]))
+    segs = []
+    for a, b in zip(cuts, cuts[1:]):
+        if b - a < 1e-4: continue
+        m = (a + b) / 2.0; r = max([1.0] + [ri for a0, b0, ri in steps if a0 <= m < b0]) * base
+        if segs and abs(segs[-1][2] - r) < 1e-6: segs[-1] = (segs[-1][0], b, r)
+        else: segs.append((a, b, round(r, 4)))
+    return segs or [(0.0, end, base)]
+def speed_map(segs, t):
+    """وقت المقطع بعد السرعة لوقت t بالخط الزمني (قبل السرعة)."""
+    out = 0.0; t = float(t)
+    for a, b, r in segs:
+        if t <= a: break
+        out += (min(t, b) - a) / r
+    if segs and t > segs[-1][1]: out += (t - segs[-1][1]) / segs[-1][2]
+    return out
+def speed_out(hs, total):
+    """مدة المقطع بعد السرعة (سرعة المقطع والأجزاء)."""
+    return round(speed_map(speed_segs(hs, total), total), 3)
+def speed_expr(segs):
+    """تعبير ffmpeg (setpts) يحوّل وقت الفريم T لوقته بعد السرعة، قطعة قطعة (بدون تقطيع الصورة، فما يضيع ولا فريم)."""
+    o = 0.0; parts = []
+    for i, (a, b, r) in enumerate(segs):
+        parts.append((b if i < len(segs) - 1 else None, "%.6f+(T-%.4f)/%.4f" % (o, a, r))); o += (b - a) / r
+    ex = parts[-1][1]
+    for b, e in reversed(parts[:-1]): ex = "if(lt(T,%.4f),%s,%s)" % (b, e, ex)
+    return ex
+def _atempo(r):
+    """سلسلة atempo (كل وحدة لين ×2، عشان ffmpeg القديم بويندوز)."""
+    out = []
+    while r > 2.0 + 1e-6: out.append("atempo=2.0"); r /= 2.0
+    if abs(r - 1.0) > 1e-4: out.append("atempo=%.4f" % r)
+    return out
+def speed_quiet(work, min_gap=2.0, pad=0.25):
+    """4.68: أجزاء بدون كلام (تحضير، مشي، شاشة) بين كلمات الكابشن، تنفع للتسريع. [(s, e)]"""
+    caps = rj(J(work, "caps.json"), {}) or {}; total = float(caps.get("total") or 0)
+    ws = sorted((float(w["s"]), float(w["e"])) for c in caps.get("cards") or [] for w in c.get("w") or [])
+    edges = [(0.0, 0.0)] + ws + [(total, total)]; out = []; last = 0.0
+    for s, e in edges:
+        if s - last >= min_gap:
+            a, b = last + (pad if last > 0 else 0), s - (pad if s < total else 0)
+            if b - a >= max(1.0, min_gap - 2 * pad): out.append((round(a, 2), round(b, 2)))
+        last = max(last, e)
+    return out
 def len_check(total, plats):
     """مدة المقطع مقابل كل منصة مختارة: over = يتعدى الحد · long/short = برا المدى الأنسب."""
     out = []
@@ -440,8 +589,16 @@ def check(work):
     except Exception: shake = None
     try: hi_ = hdr_info(work); hdr = {"kind": hi_["kind"], "washed": hi_["washed"], "level": hi_["level"]} if hi_["kind"] or hi_["level"] == "on" else None   # 4.41: ألوان HDR باهتة
     except Exception: hdr = None
+    try: color = color_issues(work)   # 4.64: لقطات معتمة أو صفراء أو تختلف عن بعض
+    except Exception: color = None
+    try: faces = fb_issue(work)   # 4.69: وجوه غيرك ظاهرة بالمقطع
+    except Exception: faces = None
+    sp_ = speed_of(hs); out_ = speed_out(hs, total) if total else 0; ln_ = len_check(out_, hs.get("platforms"))   # 4.59: المدة بعد السرعة، و«over» معه السرعة اللي تدخّله
+    o1_ = out_ * sp_   # 4.68: المدة بتسريع الأجزاء بس (بدون سرعة المقطع)، منها تنحسب سرعة المقطع اللي تدخّله
+    for l_ in ln_:
+        if l_["k"] == "over": l_["fit"] = speed_need(o1_, l_["max"])
     return {"gap": gap, "words": maxw, "fillers": fillers, "dupes": dupes, "gaps": gaps, "longCaps": long_caps, "firstCap": first, "issues": issues + (1 if hdr and hdr.get("washed") else 0), "score": score, "total": total, "tips": tips,
-            "open": open_check(first, ev, hs, total), "len": len_check(total, hs.get("platforms")), "shake": shake, "hdr": hdr, **xs}
+            "open": open_check(first, ev, hs, total), "len": ln_, "speed": sp_, "out": round(out_, 2), "parts": len(speed_parts(hs)), "shake": shake, "hdr": hdr, "faces": faces, "color": color, **xs}
 
 # ───────────────────────── قص مقاطع من الفيديو (حشو · إعادات · بليد) ─────────────────────────
 def snapshot(work, name):
@@ -707,7 +864,8 @@ def enh_filter(level, src_w=0, src_h=0):
     """سلسلة فلاتر ffmpeg (تشتغل بويندوز وماك: كلها فلاتر داخلية، ولو فلتر ناقص ينحط بديله)."""
     if level not in ("light", "strong"): return ""
     f = []
-    if src_w and src_h and (src_w < 1080 or src_h < 1920): f.append("scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920")
+    cw_, ch_ = (1920, 1080) if src_w and src_h and src_w > src_h else (1080, 1920)   # 4.60: العرضي يكبر لـ1920×1080
+    if src_w and src_h and (src_w < cw_ or src_h < ch_): f.append("scale=%d:%d:force_original_aspect_ratio=increase:flags=lanczos,crop=%d:%d" % (cw_, ch_, cw_, ch_))
     if ff_has("hqdn3d"): f.append("hqdn3d=1.5:1.5:6:6" if level == "light" else "hqdn3d=3:2.5:8:8")
     if level == "strong" and ff_has("deband"): f.append("deband")
     f.append(("cas=%.2f" % (0.5 if level == "light" else 0.85)) if ff_has("cas") else ("unsharp=5:5:%.1f:5:5:0" % (0.8 if level == "light" else 1.3)))
@@ -812,7 +970,7 @@ def slowmo_make(work, s, e, r=0.5, mute=True, log=print):
     key = "slow%d" % int(time.time()); out = (e - s); src_len = out * r
     os.makedirs(J(work, "broll"), exist_ok=True)
     pre = ",".join(x for x in (hdr_filter(work), color_filter(work), fix_filter(work)) if x)
-    vf = (pre + "," if pre else "") + "setpts=%.5f*PTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" % (1.0 / r)
+    vf = (pre + "," if pre else "") + "setpts=%.5f*PTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d" % ((1.0 / r,) + canvas_of(work) + canvas_of(work))
     log("أصنع الحركة البطيئة بفريمات بينية (%.1f ث)…" % out)
     run(["ffmpeg", "-v", "error", "-ss", "%.3f" % o, "-t", "%.3f" % (src_len + 0.1), "-i", "cutz.mp4", "-an", "-vf", vf, "-frames:v", str(int(round(out * 30))), "-q:v", "2", "-y", J("broll", key + "_%04d.jpg")], log, cwd=work)
     n = len([f for f in os.listdir(J(work, "broll")) if f.startswith(key + "_")])
@@ -929,7 +1087,7 @@ def quality_preview(work, t, level):
         for s0, e0, m0 in vm:
             if o < e0: o = m0 + max(0.0, o - s0); break
     src = J(work, "cutz.mp4"); w, h = vid_size(src); ch = enh_filter(level if level in ("light", "strong") else "light", w, h)
-    base = "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920"
+    base = "scale=%s:force_original_aspect_ratio=increase:flags=lanczos,crop=%s" % (cvs(work), cvs(work))
     hch = hdr_filter(work)   # 4.41: القبل والبعد بألوان مصلّحة لو الفيديو HDR
     if hch: base = hch + "," + base
     vf = "[0:v]%s,split[o][x];[x]%s[e];[o]crop=540:760:270:520[oc];[e]crop=540:760:270:520[ec];[oc][ec]hstack" % (base, ch or "null")
@@ -1144,7 +1302,7 @@ def broll_hdr_fix(work, key, log=print):
     if not kind: return None
     fr = glob.glob(J(work, "broll", key + "_*.jpg")); tmp = J(work, "broll", ".hdr-" + key); shutil.rmtree(tmp, ignore_errors=True); os.makedirs(tmp)
     try:
-        run(["ffmpeg", "-v", "error", "-i", os.path.relpath(src, work), "-vf", "fps=30," + hdr_vf(work, kind) + ",scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", "-q:v", "3", "-y", os.path.join(os.path.relpath(tmp, work), key + "_%04d.jpg")], log, cwd=work)
+        run(["ffmpeg", "-v", "error", "-i", os.path.relpath(src, work), "-vf", "fps=30," + hdr_vf(work, kind) + ",scale=%s:force_original_aspect_ratio=increase,crop=%s" % (cvs(work), cvs(work)), "-q:v", "3", "-y", os.path.join(os.path.relpath(tmp, work), key + "_%04d.jpg")], log, cwd=work)
         new = sorted(os.listdir(tmp))
         if not new: return None
         for f in fr: os.remove(f)
@@ -1343,6 +1501,7 @@ def insert_media(work, src, at, dur=3.0, mute=False, log=print, bg=False):
     st_ = load_studio(work); h_ = hs_of(st_)
     if h_.get("layers") is not None: h_["layers"] = _ins_split(h_["layers"], at, dd)
     if h_.get("cams"): h_["cams"] = _ins_split(h_["cams"], at, dd)
+    if h_.get("ccs"): h_["ccs"] = _ins_split(h_["ccs"], at, dd)   # 4.64: تصحيح الألوان لكل لقطة
     mx_ = h_.get("mix") or {}
     if mx_.get("vr"): mx_["vr"] = _ins_split(mx_["vr"], at, dd)   # مستوى صوت جزء كان يمر من مكانه: المضاف بصوته هو
     wj(J(work, "studio.json"), st_)
@@ -1439,6 +1598,7 @@ def retime_project(work, remap, total, new_total):
     if hs.get("blank"):   # 4.14: أجزاء «الصورة بس انحذفت» تزحف مع القص
         hs["blank"] = [{**x, "s": shift(float(x["s"])), "e": shift(float(x["e"]))} for x in hs["blank"] if shift(float(x["e"])) - shift(float(x["s"])) >= 0.04]
     if hs.get("cams"): hs["cams"] = mv(hs["cams"])   # 4.55: كاميرا كل لقطة تمشي معها
+    if hs.get("ccs"): hs["ccs"] = mv(hs["ccs"])   # 4.64: تصحيح الألوان يمشي مع اللقطة
     for k_ in ("vkf", "mkf"):   # 4.56: مفاتيح مستوى الصوت والموسيقى
         if (hs.get("mix") or {}).get(k_): hs["mix"][k_] = [{**x, "t": shift(float(x["t"]))} for x in hs["mix"][k_] if not inside(float(x["t"]))]
     if hs.get("marks"): hs["marks"] = []   # علامات القص اليدوية تنمسح بعد أي قص (مكانها تغيّر)
@@ -1746,7 +1906,9 @@ def _cards_key(work):
     return hashlib.md5(json.dumps([[round(c["s"], 2), round(c["e"], 2)] for c in cards]).encode()).hexdigest()[:8]
 def sv_sig(work):
     """يتغير لو تغيّر القص أو توقيت الجمل، فما يطلع صوت قديم."""
-    return "%s-%s-%d" % (vsig(work), _cards_key(work), SV_VER)
+    try: mk = ("-m" + mic_sig(work)[:8]) if mic_on(hs_of(load_studio(work))) else ""   # 4.66
+    except Exception: mk = ""
+    return "%s-%s-%d%s" % (vsig(work), _cards_key(work), SV_VER, mk)
 def _db10(path):
     """شدة الصوت كل 10ms بالديسيبل (numpy لو موجود، وإلا بايثون عادي)."""
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"], capture_output=True).stdout
@@ -1834,6 +1996,7 @@ def sv_cur(work):
 def studio_voice(work, log=print, force=False):
     """4.12: يعالج صوت المقطع على الجهاز ويرجع (ملف wav بزمن المقطع، الأرقام). ما يعيد الشغل لو القص والجمل ما تغيّرت."""
     src = J(work, "cutz.mp4")
+    if os.path.isfile(src): src = mic_ready(work, log) or src   # 4.66: صوت الجوالين يتعالج بدال صوت الجوال الأساسي
     if not os.path.isfile(src): return None, {"ok": False, "msg": "ما فيه مقطع مقصوص"}
     d = J(work, ".hs"); os.makedirs(d, exist_ok=True); sig = sv_sig(work); out = os.path.join(d, "sv-%s.wav" % sig); meta = os.path.join(d, "sv.json")
     with SVL:
@@ -1892,6 +2055,8 @@ def voice_track(work, mix, log=print):
         try:
             f, _ = studio_voice(work, log); return (f, "local") if f else (None, "")
         except Exception as ex: log("تنبيه: صوت الاستوديو ما اشتغل (%s). أكمل بالصوت الأصلي." % str(ex)[:160])
+    mf = mic_ready(work, log)   # 4.66: صوت كل واحد من جواله (بدون صوت استوديو)
+    if mf: return mf, "mic"
     return None, ""
 def ffdur(path):
     try: return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], capture_output=True, text=True).stdout.strip())
@@ -1899,7 +2064,7 @@ def ffdur(path):
 def sv_export(work):
     """صوت القص الحالي كـ wav، ترفعه على Auphonic أو Adobe Podcast من حسابك."""
     out = J(work, "voice-for-studio.wav")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(work, "cutz.mp4"), "-vn", "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", out], capture_output=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", voice_src(work), "-vn", "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", out], capture_output=True)
     if not os.path.isfile(out): raise RuntimeError("ما قدرت أطلّع الصوت")
     os.makedirs(J(work, ".hs"), exist_ok=True); wj(J(work, ".hs", "sv-ext.json"), {"keep": _keep_key(work), "dur": round(ffdur(out), 3), "pending": True})
     return out
@@ -2087,7 +2252,7 @@ def gloss_learn(old_caps, new_caps):
             ok_ = " ".join(na[i1:i2]); new = " ".join(re.sub(r"[؟?!.،,]+$", "", B[j]["t"]) for j in range(j1, j2)).strip()
             if len(ok_.replace(" ", "")) < 3 or re.search(r"\d", ok_ + new) or not new: continue
             latin = bool(re.search(r"[A-Za-z]", new)); close = difflib.SequenceMatcher(None, ok_, " ".join(nb[j1:j2])).ratio() >= 0.6; lo = any(A[i].get("lo") for i in range(i1, i2))
-            if latin or close or lo: G[ok_] = new; n += 1
+            if latin or (lo and close): G[ok_] = new; n += 1   # 4.70
         if n:
             if len(G) > 600: G = dict(list(G.items())[-600:])
             gloss_save(G)
@@ -2451,9 +2616,12 @@ def platform_text(names=None):
     return "\n".join(L)
 def reframe(work, src, ar, cy, log=print):
     """يطلّع نسخة بمقاس ثاني من الماستر العمودي. 4:5 و1:1 قص · 16:9 المقطع بالنص وخلفية مغبّشة منه."""
-    if ar == "9:16" or ar not in FRAMES: return None
+    if ar not in FRAMES: return None
+    land = canvas_ar(work) == "16:9"   # 4.60: الماستر عرضي (يوتيوب)
+    if ar == ("16:9" if land else "9:16"): return None
     out = J(work, "ad-%s.mp4" % ar.replace(":", "x")); w, h = FRAMES[ar]
-    if ar == "16:9": fc = "[0:v]split[a][b];[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=28:3,eq=brightness=-0.14[bg];[b]scale=-2:1080[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[v]"
+    if land: fc = "[0:v]crop=ih*%d/%d:ih:(iw-ow)/2:0,scale=%d:%d,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[v]" % (w, h, w, h)   # من العرضي: الوسط بالمقاس
+    elif ar == "16:9": fc = "[0:v]split[a][b];[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=28:3,eq=brightness=-0.14[bg];[b]scale=-2:1080[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[v]"
     else: fc = "[0:v]crop=%d:%d:0:%d,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[v]" % (w, h, crop_y0(ar, cy))
     log("نسخة بمقاس %s…" % ar)
     run(["ffmpeg", "-v", "error", "-nostats", "-i", src, "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
@@ -2465,6 +2633,10 @@ CLEAN_AF = "highpass=f=80,afftdn=nf=-28:nt=w,acompressor=threshold=-18dB:ratio=3
 def render_frames(work, S, log, rng=None):
     try: vision_ensure(work, log)
     except Exception as e: log("تنبيه: ما قدرت أجهّز قص الشخص أو مكان الوجه (%s). التصدير يكمل بدونها." % str(e)[:120])
+    wave_ensure(work, log)   # 4.57: موجة صوتك بنفس صوت المقطع اللي بيتصدّر
+    try: fb_ensure(work, log)   # 4.69: طمس الوجوه على فريمات المقطع اللي بيتصدّر
+    except Exception as e: log("تنبيه: ما قدرت أفحص الوجوه من جديد (%s)." % str(e)[:120])
+    angle_ensure(work, log)   # 4.58: الزاوية الثانية بنفس قص المقطع اللي بيتصدّر
     cmd = ["node", os.path.join(S, "04_render_frames.js"), work] + (["range", str(rng[0]), str(rng[1])] if rng else ["all", "--force"])
     log("$ 04_render_frames.js " + " ".join(cmd[3:]))
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace"); ok = False
@@ -2929,6 +3101,1406 @@ def cmd_emoji(work, args):
             E[sub] = int(max(40, min(200, f))) if sub == "size" else round(max(0.0, min(10.0, f)), 2)
         save(); print("تم"); return
     sys.exit("emoji: list | on | off | set <رقم> <إيموجي|none|auto> | clear | pos word|center | anim pop|bounce|float | size <40..200> | gap <ث> | only all|hot | auto yes|no")
+# ── 4.57: موجة صوتك (Audiogram): أعمدة أو خط أو نقاط أو دائرة تتحرك مع صوتك نفسه، بالمعاينة والتصدير ──
+# الشدة تنحسب من صوت المقطع (12 نطاق تردد + المستوى العام) كل فريم (30 بالثانية) وتنحفظ بـ hs-wave.js، والرسم بـ ext.js.
+WAVE_STYLES, WAVE_POS = ("bars", "line", "dots", "ring"), ("above", "bottom", "center", "top")
+WAVE_DEF = {"on": False, "style": "bars", "pos": "above", "color": "", "size": 100, "width": 70}
+WAVE_NB, WAVE_FPS, WAVE_SR = 12, 30, 8000
+def wave_of(hs): W = {**WAVE_DEF, **((hs or {}).get("wave") or {})}; return W
+def wave_src(work):
+    cj = rj(J(work, "cut.json"), {}) or {}
+    if cj.get("pending") and cj.get("pau") and os.path.isfile(J(work, cj["pau"])): return J(work, cj["pau"])   # بعد زر + لين يخلص الملف الكامل
+    f = J(work, "cutz.mp4"); return f if os.path.exists(f) else None
+def wave_sig(src):
+    st = os.stat(src); return "%s-%d-%d-%d" % (os.path.basename(src), int(st.st_mtime), st.st_size, WAVE_NB)
+def wave_compute(src, nb=WAVE_NB, fps=WAVE_FPS, sr=WAVE_SR):
+    """يرجّع (المستوى لكل فريم، النطاقات لكل فريم) كأرقام 0..255. بدون numpy: ffmpeg يقسم الترددات وبايثون يحسب المتوسط."""
+    cs = [round(120 * (3400 / 120) ** (i / (nb - 1))) for i in range(nb)]
+    fc = "[0:a]aformat=channel_layouts=mono,aresample=%d,asplit=%d%s;" % (sr, nb + 1, "".join("[s%d]" % i for i in range(nb + 1)))
+    fc += "".join("[s%d]bandpass=f=%d:width_type=q:w=1.4,aformat=sample_fmts=s16:channel_layouts=mono[b%d];" % (i + 1, c, i) for i, c in enumerate(cs))
+    fc += "[s0]aformat=sample_fmts=s16:channel_layouts=mono[f0];[f0]" + "".join("[b%d]" % i for i in range(nb)) + "amerge=inputs=%d[o]" % (nb + 1)
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-filter_complex", fc, "-map", "[o]", "-f", "s16le", "-acodec", "pcm_s16le", "-"], capture_output=True, timeout=900)
+    if r.returncode: raise RuntimeError("ffmpeg: " + (r.stderr or b"").decode("utf-8", "replace")[-200:])
+    a = array.array("h"); a.frombytes(r.stdout[: len(r.stdout) // (2 * (nb + 1)) * 2 * (nb + 1)]); nch = nb + 1
+    chs = [a[c::nch] for c in range(nch)]; ns = len(chs[0]); nf = int(math.ceil(ns * fps / sr))
+    raw = [[0.0] * nf for _ in range(nch)]
+    for c in range(nch):
+        ch, out = chs[c], raw[c]
+        for i in range(nf):
+            i0, i1 = int(i * sr / fps), min(ns, int((i + 1) * sr / fps))
+            if i1 > i0: out[i] = sum(map(abs, ch[i0:i1])) / (i1 - i0)
+    def pct(v, q):
+        s = sorted(x for x in v if x > 0)
+        return s[min(len(s) - 1, int(len(s) * q))] if s else 1.0
+    ref = pct(raw[0], 0.95) or 1.0; dbr = 20 * math.log10(ref)
+    lv = [max(0.0, min(1.0, ((20 * math.log10(x) if x > 0 else -120) - dbr + 30) / 30)) ** 1.25 for x in raw[0]]
+    bands = []
+    for b in range(nb):
+        pb = pct(raw[b + 1], 0.95) or 1.0
+        bands.append([min(1.0, lv[i] * (0.22 + 0.95 * min(1.15, raw[b + 1][i] / pb))) for i in range(nf)])
+    def smooth(v):   # يطلع بسرعة وينزل بهدوء (مثل أي موجة صوت)
+        y, out = 0.0, []
+        for x in v: y += (x - y) * (0.62 if x > y else 0.2); out.append(int(round(max(0.0, min(1.0, y)) * 255)))
+        return out
+    return smooth(lv), [smooth(v) for v in bands]
+def wave_build(work, force=False, log=None):
+    """يكتب hs-wave.js لو تغيّر الصوت (أو force). يرجّع {ok, n, sig}."""
+    src = wave_src(work)
+    if not src: return {"ok": False, "msg": "ما فيه صوت للمقطع للحين"}
+    sig = wave_sig(src); out = J(work, "hs-wave.js")
+    if not force and os.path.exists(out):
+        try:
+            o = json.loads(open(out, encoding="utf-8").read().split("=", 1)[1].rstrip().rstrip(";"))
+            if o and o.get("sig") == sig: return {"ok": True, "n": o.get("n", 0), "sig": sig, "cached": True}
+        except Exception: pass
+    if log: log("أحسب موجة صوتك…")
+    lv, bands = wave_compute(src)
+    n = len(lv); pk = bytearray()
+    for i in range(n):
+        pk.append(lv[i]); pk.extend(b[i] for b in bands)
+    o = {"v": int(time.time() * 1000), "sig": sig, "fps": WAVE_FPS, "nb": WAVE_NB, "n": n, "d": base64.b64encode(bytes(pk)).decode()}
+    tmp = out + ".part"; open(tmp, "w", encoding="utf-8").write("window.__hsWave=" + json.dumps(o) + ";"); os.replace(tmp, out)
+    return {"ok": True, "n": n, "sig": sig}
+def wave_ensure(work, log=None):
+    if not wave_of(hs_of(load_studio(work))).get("on"): return None
+    try: return wave_build(work, log=log)
+    except Exception as e:
+        if log: log("تنبيه: ما قدرت أحسب موجة الصوت (%s). التصدير يكمل بدونها." % str(e)[:120])
+        return None
+def cmd_wave(work, args):
+    """hs wave <work> status | on | off | style bars|line|dots|ring | pos above|bottom|center|top | color #RRGGBB|auto | size 50..200 | width 30..100 | y <15..92> | build"""
+    sub = args[0] if args else "status"; st = load_studio(work); hs = hs_of(st); W = hs.setdefault("wave", {}); save = lambda: wj(J(work, "studio.json"), st)
+    nm = {"bars": "أعمدة", "line": "موجة", "dots": "نقاط", "ring": "دائرة"}
+    if sub == "status":
+        w_ = wave_of(hs); f = J(work, "hs-wave.js")
+        print("موجة صوتك: %s · الشكل %s · المكان %s · الحجم %d%% · العرض %d%% · اللون %s · البيانات %s" % ("شغّالة" if w_["on"] else "مطفية", nm.get(w_["style"], w_["style"]), w_.get("y") if w_.get("y") is not None else w_["pos"], int(w_["size"]), int(w_["width"]), w_["color"] or "لون الكلمة المهمة", "جاهزة" if os.path.exists(f) else "تنحسب أول ما تشغّلها"))
+        return
+    if sub in ("on", "off"):
+        W["on"] = sub == "on"; save()
+        if W["on"]:
+            r = wave_build(work)
+            if not r.get("ok"): sys.exit(r.get("msg") or "ما قدرت أحسبها")
+            print("تم: موجة صوتك شغّالة (%s · %d فريم)" % (nm.get(wave_of(hs)["style"]), r["n"]))
+        else: print("تم: موجة صوتك مطفية")
+        return
+    if sub == "build": r = wave_build(work, force=True); print("تم: %d فريم" % r["n"] if r.get("ok") else r.get("msg")); return
+    if len(args) < 2: sys.exit(cmd_wave.__doc__)
+    v = args[1]
+    if sub == "style":
+        if v not in WAVE_STYLES: sys.exit("الأشكال: " + " | ".join(WAVE_STYLES))
+        W["style"] = v
+    elif sub == "pos":
+        if v not in WAVE_POS: sys.exit("الأماكن: " + " | ".join(WAVE_POS))
+        W["pos"] = v; W.pop("y", None)
+    elif sub == "color":
+        if v in ("auto", "none", ""): W["color"] = ""
+        elif re.match(r"^#[0-9A-Fa-f]{6}$", v): W["color"] = v.upper()
+        else: sys.exit("اللون بصيغة #RRGGBB أو auto")
+    elif sub in ("size", "width", "y"):
+        try: f = float(v)
+        except ValueError: sys.exit("رقم")
+        lo, hi = {"size": (50, 200), "width": (30, 100), "y": (15, 92)}[sub]; W[sub] = round(max(lo, min(hi, f)), 1)
+    else: sys.exit(cmd_wave.__doc__)
+    save(); print("تم")
+# ── 4.64: تصحيح الألوان التلقائي: يقيس كل لقطة (الإضاءة، الأبيض، التباين، التشبّع) من فريماتها نفسها ويصلحها،
+# فكل اللقطات (والزاوية الثانية) تطلع بنفس اللون. القيم تنحفظ بـ hs.ccs (لكل لقطة) و hs.cc (شغّال + القوة)، والرسم بـ ext.js
+CC_Y = 0.46          # الإضاءة اللي نبيها (متوسط لمعان الفريم 0..1، مناسب لوجه قدام الكاميرا)
+CC_SZ = 64           # كل فريم يصغر لـ 64×64 قبل القياس (يكفي للمتوسطات)
+CC_CODES = ("dark", "bright", "warm", "cool", "green", "magenta", "flat", "dull")
+def cc_bounds(work):
+    """حدود اللقطات بالمقطع النهائي: القصات + حدود المضاف + التقسيم بيدك (hs.marks)، مثل shotBounds بالاستوديو."""
+    tot = float((rj(J(work, "caps.json"), {}) or {}).get("total") or 0)
+    if tot <= 0: tot = _nvf(work) / 30.0
+    mk = [float(m) for m in (hs_of(load_studio(work)).get("marks") or []) if isinstance(m, (int, float))]
+    b = sorted({round(x, 3) for x in [0.0, tot] + keep_seams(work) + mk if 0 <= x <= tot})
+    out = []
+    for x in b:   # ما فيه لقطة أقصر من 0.2 ث
+        if out and x - out[-1] < 0.2 and x < tot: continue
+        out.append(x)
+    if len(out) >= 2 and out[-1] < tot: out[-1] = tot
+    return out if len(out) >= 2 else [0.0, tot]
+def _cc_pixels(paths):
+    """يرجّع بكسلات كل فريم (RGB، 64×64) بأمر ffmpeg واحد لكل الفريمات."""
+    if not paths: return []
+    lst = J(os.path.dirname(paths[0]), "..", ".hs", "cc-list.txt"); os.makedirs(os.path.dirname(lst), exist_ok=True)
+    with open(lst, "w", encoding="utf-8") as f:
+        for p in paths: f.write("file '%s'\n" % os.path.abspath(p).replace("\\", "/").replace("'", "'\\''"))
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-vf", "scale=%d:%d" % (CC_SZ, CC_SZ), "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+    try: os.remove(lst)
+    except OSError: pass
+    n = CC_SZ * CC_SZ * 3; out = [raw[i * n:(i + 1) * n] for i in range(len(raw) // n)]
+    if len(out) != len(paths):   # لو ffmpeg أسقط أو كرر فريم: فريم فريم (أبطأ بس مضمون)
+        out = [subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-vf", "scale=%d:%d" % (CC_SZ, CC_SZ), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout[:n] for p in paths]
+    return out
+def cc_stats(frames):
+    """متوسط اللمعان، أطراف اللمعان (2% و98%)، التشبّع، ومتوسط الألوان بالبكسلات الرمادية (جدار، قميص أبيض...)."""
+    ys = []; sy = 0.0; sw = 0.0; sat = 0.0; nr = ng = nb = 0.0; nn = 0; ar = ag = ab = 0.0; cnt = 0
+    W_ = [3.0 if ((x / CC_SZ - 0.5) / 0.32) ** 2 + ((y / CC_SZ - 0.42) / 0.3) ** 2 < 1 else 1.0 for y in range(CC_SZ) for x in range(CC_SZ)]   # النص (مكان الوجه غالباً) وزنه أكبر
+    for fr in frames:
+        for i in range(0, len(fr) - 2, 3):
+            r, g, b = fr[i] / 255.0, fr[i + 1] / 255.0, fr[i + 2] / 255.0
+            y = 0.2126 * r + 0.7152 * g + 0.0722 * b; mx = max(r, g, b); ch = mx - min(r, g, b); w = W_[(i // 3) % len(W_)]
+            ys.append(y); sy += y * w; sw += w; sat += ch; ar += r; ag += g; ab += b; cnt += 1
+            if 0.12 < y < 0.92 and ch < 0.22 * max(mx, 1e-6) + 0.02: nr += r; ng += g; nb += b; nn += 1
+    if not cnt: return None
+    ys.sort(); q = lambda p: ys[min(len(ys) - 1, int(p * len(ys)))]
+    return {"y": sy / sw, "lo": q(0.02), "hi": q(0.98), "sat": sat / cnt, "neu": nn / cnt,
+            "rgb": [nr / nn, ng / nn, nb / nn] if nn >= 0.04 * cnt else [ar / cnt, ag / cnt, ab / cnt]}
+def cc_solve(S):
+    """من القياس للتصحيح: b (إضاءة) · c (تباين) · sat (تشبّع) · g (توازن الأبيض لكل لون) + أسباب التصحيح (codes)."""
+    y, lo, hi = max(1e-3, S["y"]), S["lo"], max(1e-3, S["hi"]); codes = []
+    k = CC_Y / y
+    b0 = k if y < 0.39 else 1 + (k - 1) * (0.35 if y <= 0.56 else 0.55)   # المضيء نخففه بهدوء (ممكن يكون خلفية بيضاء مقصودة)
+    b = max(0.85, min(1.38, b0))
+    if b > 1 and hi * b > 1.0: b = max(1.0, min(b, max(1.04 / hi, 1 + (b - 1) * 0.6)))   # لا نحرق الأماكن المضيئة
+    if y < 0.33: codes.append("dark")
+    elif y > 0.62: codes.append("bright")
+    rng = hi - lo; c = 1.0
+    if rng < 0.62: c = min(1.25, 0.70 / max(rng, 0.3)); codes.append("flat") if rng < 0.5 else None
+    elif rng > 0.97: c = 0.96
+    s_ = S["sat"]; sat = 1.12 if s_ < 0.06 else 1.06 if s_ < 0.1 else 0.92 if s_ > 0.42 else 1.0
+    if s_ < 0.05: codes.append("dull")
+    R, G, B = S["rgb"]; m = (R + G + B) / 3.0; st = 0.8 if S["neu"] >= 0.04 else 0.4
+    g = [max(0.85, min(1.18, 1 + (m / max(v, 1e-3) - 1) * st)) for v in (R, G, B)]
+    L_ = 0.2126 * g[0] + 0.7152 * g[1] + 0.0722 * g[2]; g = [v / L_ for v in g]
+    if max(abs(v - 1) for v in g) < 0.015: g = [1.0, 1.0, 1.0]
+    d = max(abs(v - 1) for v in g)
+    if d >= 0.04:
+        if g[2] > g[0] + 0.03: codes.append("warm")          # اللقطة صفراء/برتقالية: نزيد الأزرق
+        elif g[0] > g[2] + 0.03: codes.append("cool")        # زرقاء: نزيد الأحمر
+        elif g[1] < min(g[0], g[2]) - 0.02: codes.append("green")
+        elif g[1] > max(g[0], g[2]) + 0.02: codes.append("magenta")
+    r3_ = lambda v: round(float(v), 3)
+    return {"b": r3_(b), "c": r3_(c), "sat": r3_(sat), "g": [r3_(v) for v in g], "codes": [x for x in codes if x]}
+def _cc_samples(s, e, per=6):
+    d = max(0.0, e - s); n = max(1, min(per, int(d / 0.5) + 1))
+    return [s + d * (i + 0.5) / n for i in range(n)]
+def cc_measure(work):
+    """يقيس كل لقطة (6 فريمات بالكثير لكل وحدة) ويرجّع قائمة التصحيح. الزاوية الثانية تنقاس بمكان ظهورها بس."""
+    n = _nvf(work)
+    if not n: return []
+    bd = cc_bounds(work); hs = hs_of(load_studio(work)); A = angle_of(hs)
+    AL = [(float(L["s"]), float(L["e"])) for L in angle_layers(hs)] if A.get("src") and os.path.isdir(J(work, "angle")) else []
+    fp = lambda d, t: J(work, d, "%05d.jpg" % max(1, min(n, int(round(t * 30)) + 1)))
+    jobs = []
+    for s, e in zip(bd, bd[1:]):
+        ts = _cc_samples(s, e); at = [t for t in _cc_samples(s, e, 12) if any(a <= t < b for a, b in AL)][:6]
+        jobs.append((s, e, [fp("vfr", t) for t in ts if os.path.isfile(fp("vfr", t))], [fp("angle", t) for t in at if os.path.isfile(fp("angle", t))]))
+    allp = [p for j in jobs for p in j[2] + j[3]]; px = _cc_pixels(allp)
+    if len(px) != len(allp): return []
+    i = 0; out = []
+    for s, e, P, Q in jobs:
+        fm = px[i:i + len(P)]; i += len(P); fa = px[i:i + len(Q)]; i += len(Q)
+        S = cc_stats(fm)
+        if not S: continue
+        c = {"s": round(s, 3), "e": round(e, 3), **cc_solve(S), "y": round(S["y"], 3)}
+        Sa = cc_stats(fa) if fa else None
+        if Sa: a_ = cc_solve(Sa); c["ang"] = {k: a_[k] for k in ("b", "c", "sat", "g")}
+        out.append(c)
+    if len(out) > 1:   # لقطات بإضاءة مختلفة كثير (فرق أكثر من 0.1): الكل يتصحح على نفس الهدف فيطلعون مثل بعض
+        ys_ = [c["y"] for c in out]
+        if max(ys_) - min(ys_) > 0.1:
+            for c in out:
+                if not c["codes"]: c["codes"] = ["match"]
+    return out
+def color_sig(work):
+    try: vm = int(os.path.getmtime(J(work, "vfr", "00001.jpg")))
+    except OSError: vm = 0
+    return "cc1|%d|%d|%s" % (_nvf(work), vm, ",".join("%.2f" % x for x in cc_bounds(work)))
+def color_scan(work):
+    """القياس مع كاش (.hs/color.json) عشان الفحص ما يعيده كل مرة."""
+    f = J(work, ".hs", "color.json"); sig = color_sig(work); C = rj(f, {}) or {}
+    if C.get("sig") == sig and isinstance(C.get("clips"), list): return C["clips"]
+    cl_ = cc_measure(work); os.makedirs(J(work, ".hs"), exist_ok=True); wj(f, {"sig": sig, "clips": cl_}); return cl_
+def color_auto(work, amount=None):
+    """يقيس ويطبّق: hs.ccs + hs.cc = {on, amount}."""
+    cl_ = color_scan(work)
+    if not cl_: return {"ok": False, "msg": "فريمات المقطع ما جهزت للحين"}
+    st = load_studio(work); hs = hs_of(st); C = hs.get("cc") or {}
+    a = C.get("amount", 1.0) if amount is None else amount
+    hs["ccs"] = cl_; hs["cc"] = {"on": True, "amount": round(max(0.0, min(1.0, float(a))), 2)}; wj(J(work, "studio.json"), st)
+    return {"ok": True, "clips": cl_, "cc": hs["cc"]}
+def color_issues(work):
+    """للفحص: اللقطات اللي فيها مشكلة لون (لو التصحيح مو شغّال)."""
+    hs = hs_of(load_studio(work))
+    if (hs.get("cc") or {}).get("on") and hs.get("ccs"): return None
+    cl_ = color_scan(work); bad = [{"i": i, "s": c["s"], "codes": c["codes"]} for i, c in enumerate(cl_) if [x for x in c["codes"] if x != "match"]]
+    return {"clips": bad, "n": len(cl_)} if bad else None
+def cmd_color(work, args):
+    """hs color <work> auto | on | off | amount <0..1> | status | clear"""
+    sub = args[0] if args else "status"; st = load_studio(work); hs = hs_of(st)
+    nm = {"dark": "معتمة", "bright": "محروقة", "warm": "صفراء", "cool": "زرقاء", "green": "مخضرّة", "magenta": "وردية", "flat": "باهتة", "dull": "ألوانها طافية", "match": "تختلف عن باقي اللقطات"}
+    if sub == "status":
+        C = hs.get("cc") or {}; L = hs.get("ccs") or []
+        print("تصحيح الألوان: %s · القوة %d%% · %d لقطة" % ("شغّال" if C.get("on") and L else "مطفي", round(100 * float(C.get("amount", 1))), len(L)))
+        for i, c in enumerate(L or color_scan(work)):
+            print("  %d) %.1f-%.1f ث · %s · إضاءة ×%.2f" % (i + 1, c["s"], c["e"], "، ".join(nm.get(x, x) for x in c["codes"]) or "سليمة", c["b"]))
+        return
+    if sub == "auto":
+        r = color_auto(work)
+        if not r["ok"]: sys.exit(r["msg"])
+        bad = [c for c in r["clips"] if c["codes"]]
+        print("تم: صحّحت %d لقطة (%d فيها مشكلة)" % (len(r["clips"]), len(bad))); return
+    if sub in ("on", "off"):
+        if sub == "on" and not hs.get("ccs"): return cmd_color(work, ["auto"])
+        hs.setdefault("cc", {"amount": 1.0})["on"] = sub == "on"; wj(J(work, "studio.json"), st); print("تم"); return
+    if sub == "clear": hs.pop("cc", None); hs.pop("ccs", None); wj(J(work, "studio.json"), st); print("تم: انشال التصحيح"); return
+    if sub == "amount" and len(args) > 1:
+        try: a = float(args[1])
+        except ValueError: sys.exit("القوة رقم من 0 لـ 1")
+        if a > 1: a = a / 100.0
+        hs.setdefault("cc", {"on": bool(hs.get("ccs"))})["amount"] = round(max(0.0, min(1.0, a)), 2); wj(J(work, "studio.json"), st); print("تم"); return
+    sys.exit(cmd_color.__doc__)
+# ── 4.69: طمس الوجوه (Face blur): يلقى كل وجه بالمقطع (حتى الصغير البعيد) ويتابعه، ويطمس كل الوجوه إلا وجهك.
+# الفحص بـ engine/scripts/21_vision.js faces (كروم بلا واجهة، موديل الوجه اللي داخل السكل، على جهازك) ← faces-raw.json،
+# والمتابعة هنا (تنفحص بالفحص الذاتي بدون كروم) ← faces.json + hs-blur.js، والرسم بـ ext.js (المعاينة والتصدير نفس الرسم).
+# الإعداد hs.fblur = {on, style: blur|pixel|bar, amount 0..1, pick: {"رقم الوجه": true/false}} · المبدئي: كل وجه ينطمس إلا الرئيسي (أنت)
+FB_STYLES = ("blur", "pixel", "bar")
+FB_MIN_SCORE = 0.5     # أقل ثقة لكشف الوجه
+FB_GAP = 1.0           # لو الوجه غاب أكثر من ثانية يصير وجه جديد
+def fb_n(n): return "وجه واحد" if n == 1 else "وجهين" if n == 2 else "%d وجوه" % n if 3 <= n <= 10 else "%d وجه" % n
+def fb_iou(a, b):
+    ax0, ay0, ax1, ay1 = a[0] - a[2] / 2, a[1] - a[3] / 2, a[0] + a[2] / 2, a[1] + a[3] / 2
+    bx0, by0, bx1, by1 = b[0] - b[2] / 2, b[1] - b[3] / 2, b[0] + b[2] / 2, b[1] + b[3] / 2
+    iw = max(0.0, min(ax1, bx1) - max(ax0, bx0)); ih = max(0.0, min(ay1, by1) - max(ay0, by0)); i = iw * ih
+    if i <= 0: return 0.0, 0.0
+    aa, bb = a[2] * a[3], b[2] * b[3]
+    return i / max(1e-9, aa + bb - i), i / max(1e-9, min(aa, bb))
+def fb_merge(dets):
+    """نفس الوجه ينكشف أكثر من مرة (الكادر كامل والمربعات المتداخلة): نجمعهم وجه واحد بمتوسط موزون بالثقة."""
+    D = sorted([d for d in dets if len(d) >= 4 and (d[4] if len(d) > 4 else 1) >= FB_MIN_SCORE and d[2] > 0 and d[3] > 0], key=lambda d: -(d[4] if len(d) > 4 else 1))
+    out = []
+    for d in D:
+        for g in out:
+            iou, cont = fb_iou(g["b"], d)
+            if iou > 0.3 or cont > 0.6:
+                g["m"].append(d); break
+        else: out.append({"b": d, "m": [d]})
+    res = []
+    for g in out:
+        b0 = g["b"]; g["m"] = [x for x in g["m"] if 0.75 <= x[2] / max(1e-9, b0[2]) <= 1.33]   # الكشف الأكبر أو الأصغر بكثير (يد، كتف) ما يغيّر مقاس الوجه
+        w = [(x[4] if len(x) > 4 else 1) for x in g["m"]]; sw = sum(w)
+        box = [sum(x[k] * wi for x, wi in zip(g["m"], w)) / sw for k in range(4)]
+        res.append(box + [max(w), len(g["m"])])
+    return res
+def fb_track(raw):
+    """يربط الوجوه بين اللقطات (أقرب وجه بنفس الحجم تقريباً)، ويشيل الكشف الغلط اللي يطلع مرة وحدة."""
+    fps = float(raw.get("fps") or 30); fr = sorted(raw.get("fr") or [], key=lambda x: x[0]); T = []
+    for n, dets in fr:
+        t = round((int(n) - 1) / fps, 3); ds = fb_merge(dets); used = set()
+        live = [k for k, tr in enumerate(T) if t - tr["pts"][-1][0] <= FB_GAP + 1e-6]
+        pairs = []
+        for k in live:
+            p = T[k]["pts"][-1]
+            for j, d in enumerate(ds):
+                sz = max(p[3], d[2]); dist = ((p[1] - d[0]) ** 2 + ((p[2] - d[1]) * 16 / 9) ** 2) ** 0.5 / max(1e-6, sz)
+                r = d[2] / max(1e-6, p[3])
+                if dist < 1.1 and 0.5 < r < 2.0: pairs.append((dist, k, j))
+        for dist, k, j in sorted(pairs):
+            if k in used or ("j", j) in used: continue
+            d = ds[j]; T[k]["pts"].append([t] + [round(v, 4) for v in d[:4]]); T[k]["sc"].append(d[4]); used.add(k); used.add(("j", j))
+        for j, d in enumerate(ds):
+            if ("j", j) not in used: T.append({"pts": [[t] + [round(v, 4) for v in d[:4]]], "sc": [d[4]]})
+    T.sort(key=lambda tr: tr["pts"][0][0]); i = 0   # وجه انقطع لحظة وكمل بنفس المكان والمقاس: نرجّعه وجه واحد
+    while i < len(T):
+        a = T[i]; j = i + 1; joined = False
+        while j < len(T):
+            b = T[j]; pa, pb = a["pts"][-1], b["pts"][0]
+            if 0 < pb[0] - pa[0] <= FB_GAP + 1e-6 and ((pa[1] - pb[1]) ** 2 + ((pa[2] - pb[2]) * 16 / 9) ** 2) ** 0.5 < 1.2 * max(pa[3], pb[3]) and 0.5 < pb[3] / max(1e-6, pa[3]) < 2.0:
+                a["pts"] += b["pts"]; a["sc"] += b["sc"]; T.pop(j); joined = True; break
+            j += 1
+        if not joined: i += 1
+    keep = [tr for tr in T if len(tr["pts"]) >= 3 or (len(tr["pts"]) >= 2 and sum(tr["sc"]) / len(tr["sc"]) >= 0.85)]
+    nS = max(1, len(fr)); med = lambda a: sorted(a)[len(a) // 2]
+    for tr in keep: tr["h"] = med([p[4] for p in tr["pts"]]); tr["hit"] = len(tr["pts"]) / nS
+    main = max(keep, key=lambda tr: sum(p[4] for p in tr["pts"]), default=None)
+    if main is not None and not (main["h"] >= 0.1 and main["hit"] >= 0.3): main = None   # ما فيه متحدث واضح (تصوير شارع مثلاً): كل الوجوه تنطمس
+    mains = set()
+    if main is not None:   # بعد قص أو مشهد ثاني يرجع المتحدث بنفس مكانه ومقاسه: هو نفسه (ما ينطمس)
+        mx_, my_ = med([p[1] for p in main["pts"]]), med([p[2] for p in main["pts"]])
+        for tr in keep:
+            ov = min(tr["pts"][-1][0], main["pts"][-1][0]) - max(tr["pts"][0][0], main["pts"][0][0])
+            cx_, cy_ = med([p[1] for p in tr["pts"]]), med([p[2] for p in tr["pts"]])
+            if tr is main or (ov <= 0.2 and tr["h"] >= 0.7 * main["h"] and ((cx_ - mx_) ** 2 + ((cy_ - my_) * 16 / 9) ** 2) ** 0.5 < 0.6 * max(main["h"] * 16 / 9, 1e-6)): mains.add(id(tr))
+    out = []
+    for i, tr in enumerate(sorted(keep, key=lambda tr: (tr["pts"][0][0], -tr["h"]))):
+        big = max(tr["pts"], key=lambda p: p[3] * p[4])
+        out.append({"id": i + 1, "main": id(tr) in mains, "t0": tr["pts"][0][0], "t1": tr["pts"][-1][0], "h": round(tr["h"], 4), "hits": len(tr["pts"]),
+                    "th": [big[0], big[1], big[2], big[3], big[4]], "pts": tr["pts"]})
+    return out
+def fb_sig(work):
+    try: vm = int(os.path.getmtime(J(work, "vfr", "00001.jpg")))
+    except OSError: vm = 0
+    return "fb1|%d|%d" % (_nvf(work), vm)
+def fblur_of(hs):
+    F = dict((hs or {}).get("fblur") or {})
+    F["on"] = bool(F.get("on")); F["style"] = F.get("style") if F.get("style") in FB_STYLES else "blur"
+    try: F["amount"] = max(0.0, min(1.0, float(F.get("amount", 0.7))))
+    except (TypeError, ValueError): F["amount"] = 0.7
+    F["pick"] = {str(k): bool(v) for k, v in (F.get("pick") or {}).items()}
+    return F
+def fb_blurred(tr, F):
+    """الوجه ينطمس؟ اختيارك أول، وإلا كل وجه إلا الرئيسي."""
+    k = str(tr["id"]); return F["pick"][k] if k in F["pick"] else not tr.get("main")
+def fb_write(work, tracks, raw_v=None):
+    o = {"v": int(time.time() * 1000), "sig": fb_sig(work), "tracks": tracks}
+    wj(J(work, "faces.json"), o)
+    tmp = J(work, "hs-blur.js.part"); open(tmp, "w", encoding="utf-8").write("window.__hsBlur=" + json.dumps(o, ensure_ascii=False, separators=(",", ":")) + ";"); os.replace(tmp, J(work, "hs-blur.js"))
+    return o
+def fb_load(work): return rj(J(work, "faces.json"), None)
+def fb_stale(work):
+    o = fb_load(work); return bool(o) and o.get("sig") != fb_sig(work)
+def fb_scan(work, log=print, step=6):
+    """يفحص الفريمات ويبني الوجوه. الاختيارات القديمة تنشال (أرقام الوجوه تتغيّر)."""
+    if not _nvf(work): return {"ok": False, "msg": "فريمات المقطع ما جهزت للحين"}
+    log("أدوّر كل الوجوه بالمقطع (على جهازك)…")
+    if not vision_run(work, ["faces", str(step)], log) or not os.path.exists(J(work, "faces-raw.json")): return {"ok": False, "msg": "ما قدرت أفحص الوجوه (شوف السجل)"}
+    tr = fb_track(rj(J(work, "faces-raw.json"), {}) or {}); fb_write(work, tr)
+    st = load_studio(work); hs = hs_of(st); F = hs.setdefault("fblur", {}); F.pop("pick", None); F["on"] = True; F.setdefault("style", "blur"); F.setdefault("amount", 0.7); wj(J(work, "studio.json"), st)
+    return {"ok": True, **fb_view(work)}
+def fb_view(work):
+    o = fb_load(work) or {}; F = fblur_of(hs_of(load_studio(work))); T = o.get("tracks") or []
+    return {"ok": True, "scanned": bool(o), "stale": fb_stale(work), "fblur": F,
+            "faces": [{**{k: tr[k] for k in ("id", "main", "t0", "t1", "h", "hits")}, "blur": fb_blurred(tr, F)} for tr in T]}
+def fb_ensure(work, log=print):
+    """قبل التصدير: لو الطمس شغّال والمقطع تغيّر بعد الفحص، يفحص من جديد (عشان ما يطلع وجه بدون طمس)."""
+    F = fblur_of(hs_of(load_studio(work)))
+    if not F["on"] or not (fb_stale(work) or not fb_load(work)): return None
+    log("المقطع تغيّر بعد فحص الوجوه، أفحصها من جديد قبل التصدير…")
+    pk = F["pick"]; r = fb_scan(work, log)
+    if pk: log("تنبيه: اختياراتك للوجوه انشالت بعد الفحص الجديد، وكل وجه غيرك ينطمس.")
+    return r
+def fb_issue(work):
+    """للفحص: وجوه غيرك بالمقطع وما انطمست (بس لو فيه فحص قبل)."""
+    o = fb_load(work)
+    if not o: return None
+    F = fblur_of(hs_of(load_studio(work))); T = o.get("tracks") or []
+    other = [tr for tr in T if not tr.get("main")]
+    open_ = [tr for tr in other if not (F["on"] and fb_blurred(tr, F))]
+    if not open_ and not (F["on"] and fb_stale(work)): return None
+    return {"n": len(open_), "stale": F["on"] and fb_stale(work), "faces": [{"id": tr["id"], "t0": tr["t0"], "t1": tr["t1"]} for tr in open_][:12]}
+def fb_thumb(work, fid):
+    """صورة الوجه (من أوضح لقطة له) للاستوديو."""
+    o = fb_load(work) or {}; tr = next((x for x in o.get("tracks") or [] if x["id"] == int(fid)), None)
+    if not tr: return None
+    t, cx, cy, w, h = tr["th"]; n = max(1, min(_nvf(work), int(round(t * 30)) + 1)); src = J(work, "vfr", "%05d.jpg" % n)
+    out = J(work, ".hs", "fb", "%d-%d.jpg" % (tr["id"], o.get("v", 0))); os.makedirs(os.path.dirname(out), exist_ok=True)
+    if not os.path.exists(out):
+        S_ = "min(min(iw\\,ih)\\,1.5*max(%.4f*iw\\,%.4f*ih))" % (w, h)   # مربع حول الوجه، أكبر منه بشوي
+        vf = "crop=%s:%s:max(0\\,min(iw-%s\\,%.4f*iw-%s/2)):max(0\\,min(ih-%s\\,%.4f*ih-%s/2)),scale=96:96" % (S_, S_, S_, cx, S_, S_, cy, S_)
+        run(["ffmpeg", "-v", "error", "-y", "-i", src, "-vf", vf, "-frames:v", "1", out], lambda *_: None, check=False)
+    return out if os.path.exists(out) else None
+def cmd_blur(work, args):
+    """hs blur <work> scan | status | on | off | style blur|pixel|bar | amount <0..1> | hide <n…> | show <n…> | all | auto | clear"""
+    sub = args[0] if args else "status"; st = load_studio(work); hs = hs_of(st); save = lambda: wj(J(work, "studio.json"), st)
+    nm = {"blur": "ضباب", "pixel": "مربعات", "bar": "شريط أسود"}
+    if sub == "scan":
+        r = fb_scan(work)
+        if not r["ok"]: sys.exit(r["msg"])
+        fs_ = r["faces"]; print("تم: لقيت %s (%s)، وانطمس %s" % (fb_n(len(fs_)), "منهم أنت" if any(f["main"] for f in fs_) else "ما فيه متحدث واضح، فكلها تنطمس", fb_n(sum(1 for f in fs_ if f["blur"])))); return
+    if sub == "status":
+        v = fb_view(work); F = v["fblur"]
+        if not v["scanned"]: print("طمس الوجوه: ما انفحص المقطع للحين (hs blur <work> scan)"); return
+        print("طمس الوجوه: %s · %s · القوة %d%%%s" % ("شغّال" if F["on"] else "مطفي", nm[F["style"]], round(F["amount"] * 100), " · المقطع تغيّر، افحص من جديد" if v["stale"] else ""))
+        for f in v["faces"]: print("  %d) %s %.1f-%.1f ث · %s" % (f["id"], "أنت" if f["main"] else "وجه", f["t0"], f["t1"], "ينطمس" if f["blur"] else "ظاهر"))
+        return
+    F = hs.setdefault("fblur", {})
+    if sub in ("on", "off"):
+        if sub == "on" and not fb_load(work): return cmd_blur(work, ["scan"])
+        F["on"] = sub == "on"; save(); print("تم"); return
+    if sub == "clear": hs.pop("fblur", None); save(); print("تم: انشال الطمس (الفحص باقي)"); return
+    if sub in ("all", "auto"):
+        o = fb_load(work) or {}; F["pick"] = {str(tr["id"]): True for tr in o.get("tracks") or []} if sub == "all" else {}; F["on"] = True; save(); print("تم"); return
+    if len(args) < 2: sys.exit(cmd_blur.__doc__)
+    if sub == "style":
+        if args[1] not in FB_STYLES: sys.exit("الأشكال: " + " | ".join(FB_STYLES))
+        F["style"] = args[1]
+    elif sub == "amount":
+        try: a = float(args[1])
+        except ValueError: sys.exit("القوة رقم من 0 لـ 1")
+        F["amount"] = round(max(0.0, min(1.0, a / 100.0 if a > 1 else a)), 2)
+    elif sub in ("hide", "show"):
+        ids = {str(tr["id"]) for tr in (fb_load(work) or {}).get("tracks") or []}; P_ = F.setdefault("pick", {})
+        for x in args[1:]:
+            if x not in ids: sys.exit("ما فيه وجه رقم %s (شوف hs blur <work> status)" % x)
+            P_[x] = sub == "hide"
+        F["on"] = True
+    else: sys.exit(cmd_blur.__doc__)
+    save(); print("تم")
+def cmd_canvas(work, args):
+    """4.60: hs canvas <work> 16:9 | 9:16 | status: شكل المشروع (عرضي لليوتيوب أو عمودي)."""
+    a = (args[0] if args else "status").strip()
+    if a in ("status", ""): w_, h_ = canvas_of(work); print("شكل المشروع: %s (%d×%d)" % (canvas_ar(work), w_, h_)); return
+    if a in ("wide", "land", "youtube", "yt"): a = "16:9"
+    if a in ("tall", "vertical", "reels"): a = "9:16"
+    if a not in CANVAS: sys.exit("الشكل: 16:9 (عرضي، يوتيوب) أو 9:16 (عمودي)")
+    if canvas_ar(work) == a: print("المشروع أصلاً " + a); return
+    canvas_set(work, a); patch(work, quiet=True)
+    if os.path.isfile(J(work, "cutz.mp4")) or os.path.isfile(J(work, "cut.json")):
+        eng = find_engine(None) or sys.exit("ما لقيت مجلد engine")
+        rebuild_video(work, os.path.join(eng, "scripts"), print)
+    w_, h_ = canvas_of(work); print("صار المشروع %s (%d×%d): القص والكابشن والطبقات والتصدير على المقاس الجديد." % (a, w_, h_))
+def speed_part_add(work, s, e, r=2.0, ramp=True):
+    """4.68: يحط طبقة تسريع على [s, e] (ويشيل التسريع اللي تحته). يرجّع الطبقة."""
+    s, e, r = float(s), float(e), float(r)
+    st = load_studio(work); hs = hs_of(st); total = float((rj(J(work, "caps.json"), {}) or {}).get("total") or 0)
+    if total: e = min(e, total)
+    s = max(0.0, s)
+    if e - s < 0.5: raise ValueError("الجزء لازم نص ثانية أو أكثر")
+    if not (1.05 <= r <= SPART_MAX): raise ValueError("سرعة الجزء بين 1.1 و %g" % SPART_MAX)
+    Ls = hs.setdefault("layers", []); keep = []
+    for L in Ls:
+        if L.get("type") != "speed" or L.get("e", 0) <= s or L.get("s", 0) >= e: keep.append(L); continue
+        if L["s"] < s - 0.3: keep.append({**L, "e": round(s, 3)})
+        if L["e"] > e + 0.3: keep.append({**L, "id": None, "s": round(e, 3)})
+    for L in keep:
+        if L.get("id") is None: L["id"] = new_id(keep)
+    L = {"id": new_id(keep), "type": "speed", "s": round(s, 3), "e": round(e, 3), "r": round(r, 3), "ramp": bool(ramp), "track": 0}
+    keep.append(L); hs["layers"] = keep; wj(J(work, "studio.json"), st); return L
+# ══════════ 4.70: السبورة (board): شرح متحرك يكتبه Claude بـ JSON، والمحرّك (ext.js) يرسمه. المرجع: engine/references/board.md ══════════
+BD_KINDS = {"text", "num", "line", "arrow", "shape", "mark", "path", "icon", "axes", "grid", "bars", "char", "photo", "svg", "img", "glass", "pour"}
+BD_MODES = ("full", "top", "card"); BD_BGS = ("chalk", "slate", "night", "blueprint", "paper", "white")
+BD_COLORS = ("white", "yellow", "pink", "blue", "green", "orange", "red", "purple", "gray", "ink")
+BD_OVER = {"text", "num", "char", "photo", "svg", "img", "icon"}   # هذي اللي ما تتغطى على بعض (الدوائر والأسهم والشبكة مقصود تمر عليها)
+_BDV = {}
+def bd_vocab():
+    """أسماء الأيقونات والشخصيات من المحرّك نفسه (ext.js) عشان القائمة ما تختلف."""
+    if _BDV: return _BDV
+    try: s = open(J(HERE, "ext.js"), encoding="utf-8").read()
+    except Exception: s = ""
+    def part(name):
+        i = s.find("const %s={" % name); return s[i:s.find("};", i)] if i >= 0 else ""
+    _BDV["icons"] = set(re.findall(r"([a-z]+):'M", part("BD_ICON")))
+    _BDV["people"] = set(re.findall(r"([a-z]+):\{skin", part("BD_PEOPLE")))
+    _BDV["things"] = set(re.findall(r"([a-z]+):\(c,o", part("BD_THINGS")))
+    return _BDV
+def _bf(v, d=0.0):
+    try: return float(v) if v is not None and v != "" else d
+    except (TypeError, ValueError): return d
+def bd_area(work, L):
+    """مقاس اللوحة مثل المحرّك: «فوق» بالطولي = الجزء اللي فوق الفيديو (ratio 0.38..0.62، الافتراضي النص)، وبالعرضي = اللي يسار الفيديو (ratio نصيب الفيديو 0.3..0.5)."""
+    W, H = canvas_of(work); m = L.get("mode") or "full"; land = W > H
+    if m == "top":
+        if land: return (W * (1 - min(0.5, max(0.3, _bf(L.get("ratio"), 0.4)))), H)
+        return (W, H * min(0.62, max(0.38, _bf(L.get("ratio"), 0.5))))
+    if m == "card":
+        d = {"w": 0.5, "h": 0.5} if land else {"w": 0.9, "h": 0.36}; b = L.get("box") if isinstance(L.get("box"), dict) else {}
+        return (W * _bf(b.get("w"), d["w"]), H * _bf(b.get("h"), d["h"]))
+    return (W, H)
+def bd_box(it, aw, ah):
+    """مستطيل العنصر التقريبي بنسبة اللوحة (0..1) للفحص: يطلع برا؟ يغطي على غيره؟"""
+    U = min(aw, ah) / 100.0; k = it.get("k") or "text"; x = _bf(it.get("x"), 0.5) * aw; y = _bf(it.get("y"), 0.5) * ah
+    def bx(w, h): return ((x - w / 2) / aw, (y - h / 2) / ah, (x + w / 2) / aw, (y + h / 2) / ah)
+    if k in ("text", "num"):
+        t = str(it.get("t", "")) if k == "text" else "%s%s%s" % (it.get("pre", ""), it.get("to", ""), it.get("suf", ""))
+        size = _bf(it.get("size"), 7) * U; maxw = _bf(it.get("w"), 0.86) * aw; tw = len(t) * size * 0.5
+        n = max(1, int(math.ceil(tw / maxw))) if maxw > 0 else 1; w = min(tw, maxw); h = n * size * 1.22; al = it.get("align", "center")
+        x0 = x - (w / 2 if al == "center" else (w if al == "right" else 0)); return (x0 / aw, (y - h / 2) / ah, (x0 + w) / aw, (y + h / 2) / ah)
+    if k == "char": s = _bf(it.get("size"), 24) * U; return bx(s * 0.8, s)
+    if k == "icon": s = _bf(it.get("size"), 14) * U; return bx(s, s)
+    if k in ("photo", "svg", "img"): w = _bf(it.get("w"), 0.3 if k == "photo" else 0.25) * aw; return bx(w * (1.12 if k == "photo" else 1), w * (1.25 if k == "photo" else 1))
+    if k in ("line", "arrow", "pour"):
+        P = it.get("pts") or [it.get("from") or [0.4, 0.3], it.get("to") or [0.5, 0.7]]
+        try: xs = [_bf(p[0]) for p in P]; ys = [_bf(p[1]) for p in P]; return (min(xs), min(ys), max(xs), max(ys))
+        except Exception: return (0, 0, 0, 0)
+    w = _bf(it.get("w"), 0.3) * aw; h = _bf(it.get("h"), _bf(it.get("w"), 0.3)) * ah; return bx(w, h)
+def bd_check(work, L, dur=None):
+    """يرجع (أخطاء، تحذيرات) لسبورة وحدة. الأخطاء تمنع الإضافة، والتحذيرات تنطبع عشان Claude يصلحها (بند 7: ولا شي يغطي على شي)."""
+    try: return _bd_check(work, L, dur)
+    except Exception as ex: return ["%s: فيها قيمة ما أقدر أقراها (%s)" % (L.get("id") or "?", str(ex)[:120])], []
+def _bd_check(work, L, dur=None):
+    E, Wn = [], []; V = bd_vocab(); lid = L.get("id") or "?"
+    try: s, e = float(L.get("s", 0)), float(L.get("e", 0))
+    except Exception: return ["%s: s و e لازم أرقام" % lid], []
+    if e <= s: E.append("%s: e لازم بعد s" % lid)
+    if dur and s >= dur: E.append("%s: تبدأ بعد نهاية المقطع (%.1f ث)" % (lid, dur))
+    if (L.get("mode") or "full") not in BD_MODES: E.append("%s: mode لازم full أو top أو card" % lid)
+    if (L.get("bg") or "chalk") not in BD_BGS: E.append("%s: bg لازم واحد من %s" % (lid, ", ".join(BD_BGS)))
+    sc = L.get("scenes") if isinstance(L.get("scenes"), list) else [{"at": 0, "items": L.get("items") or []}]
+    if "scenes" in L and not isinstance(L.get("scenes"), list): E.append("%s: scenes لازم قائمة" % lid)
+    for i_, x_ in enumerate(sc):
+        if not isinstance(x_, dict): E.append("%s: المشهد %d لازم كائن {at, items}" % (lid, i_ + 1))
+        elif not isinstance(x_.get("items", []), list): E.append("%s: items بالمشهد %d لازم قائمة" % (lid, i_ + 1))
+        elif x_.get("at") is not None and not isinstance(x_.get("at"), (int, float)): E.append("%s: at بالمشهد %d لازم رقم ثواني" % (lid, i_ + 1))
+    if E: return E, Wn
+    if not sc or not any(x.get("items") for x in sc): E.append("%s: ما فيها مشاهد ولا عناصر" % lid)
+    aw, ah = bd_area(work, L); ln = e - s
+    st = load_studio(work); cap = (hs_of(st).get("cap") or {}); W, H = canvas_of(work)
+    capband = None
+    if (L.get("mode") or "full") == "full" and cap.get("on") and L.get("caps") != "off":
+        cy = float(cap.get("y", 76)) / 100.0; capband = (cy - 0.055, cy + 0.04)
+    ats = [_bf(x.get("at"), 0) for x in sc]
+    if ats != sorted(ats): E.append("%s: المشاهد لازم مرتبة بالوقت (at)" % lid)
+    for i, S in enumerate(sc):
+        a0 = _bf(S.get("at"), 0); a1 = ats[i + 1] if i + 1 < len(ats) else ln; sd = a1 - a0; its = [x for x in (S.get("items") or []) if isinstance(x, dict)]
+        tag = "%s مشهد %d" % (lid, i + 1)
+        if a0 >= ln: E.append("%s: يبدأ بعد نهاية السبورة" % tag)
+        if 0 < sd < 1.4: Wn.append("%s: قصير (%.1f ث)، خله 2.5 ث أو أكثر عشان ينقرى" % (tag, sd))
+        if len(its) > 9: Wn.append("%s: فيه %d عناصر، الزحمة تضيّع الفكرة (خلها 2 إلى 8)" % (tag, len(its)))
+        vis = []
+        for j, it in enumerate(its):
+            k = it.get("k") or "text"; nm = "%s عنصر %d (%s)" % (tag, j + 1, k)
+            if k not in BD_KINDS: E.append("%s: نوع ما أعرفه، الأنواع: %s" % (nm, ", ".join(sorted(BD_KINDS)))); continue
+            bad_ = [f_ for f_ in ("at", "out", "dur", "x", "y", "w", "h", "size", "rot", "sc", "a") if it.get(f_) is not None and not isinstance(it.get(f_), (int, float))]
+            if bad_: E.append("%s: %s لازم أرقام (بدون وحدات مثل s أو %%)" % (nm, ", ".join(bad_))); continue
+            if k in ("line", "arrow") and it.get("pts") is not None and (not isinstance(it["pts"], list) or len([p for p in it["pts"] if isinstance(p, list) and len(p) >= 2]) < 2): E.append("%s: pts لازم نقطتين أو أكثر [[x,y],[x,y]]" % nm); continue
+            if k == "bars" and it.get("vals") is not None and (not isinstance(it["vals"], list) or not all(isinstance(v, (int, float)) for v in it["vals"])): E.append("%s: vals لازم قائمة أرقام" % nm); continue
+            if k in ("kf",) or (it.get("kf") is not None and not isinstance(it.get("kf"), list)): E.append("%s: kf لازم قائمة" % nm); continue
+            at = _bf(it.get("at"), 0); out = _bf(it.get("out"), sd) if it.get("out") is not None else sd
+            if at >= sd: Wn.append("%s: يطلع بعد ما ينتهي المشهد (at %.1f)" % (nm, at))
+            if k == "text":
+                t = str(it.get("t") or "").strip()
+                if not t: E.append("%s: نص فاضي" % nm)
+                elif len(t.split()) > 8: Wn.append("%s: «%s» طويل، خله 8 كلمات أو أقل" % (nm, t[:40]))
+            if k == "icon" and V["icons"] and it.get("name") not in V["icons"]: E.append("%s: أيقونة «%s» مو موجودة، الموجود: %s" % (nm, it.get("name"), ", ".join(sorted(V["icons"]))))
+            if k == "char" and (V["people"] or V["things"]) and (it.get("who") or "kid") not in V["people"] | V["things"]: E.append("%s: شخصية «%s» مو موجودة، الموجود: %s" % (nm, it.get("who"), ", ".join(sorted(V["people"] | V["things"]))))
+            if k in ("photo", "img"):
+                src = str(it.get("src") or "")
+                if not src or not os.path.isfile(J(work, src)): E.append("%s: الصورة «%s» مو موجودة داخل المشروع (حطها في assets/)" % (nm, src))
+            if k == "svg":
+                sv = str(it.get("svg") or "").strip()
+                if not sv.startswith("<svg") or "</svg>" not in sv: E.append("%s: svg لازم يبدأ بـ <svg وينتهي بـ </svg>" % nm)
+                elif len(sv) > 60000: E.append("%s: svg كبير (أكثر من 60 ألف حرف)" % nm)
+            if k == "path" and not str(it.get("d") or "").strip(): E.append("%s: path بدون d" % nm)
+            for c_ in ("color", "fill", "liquid", "lc"):
+                v = it.get(c_)
+                if isinstance(v, str) and v and not v.startswith("#") and not v.startswith("rgb") and v not in BD_COLORS: Wn.append("%s: لون «%s» مو من الألوان (%s) ولا #hex" % (nm, v, ", ".join(BD_COLORS)))
+            b = bd_box(it, aw, ah)
+            if k in BD_OVER and (b[0] < -0.02 or b[2] > 1.02 or b[1] < -0.02 or b[3] > 1.02): Wn.append("%s: طالع برا اللوحة" % nm)
+            if capband and k in BD_OVER and b[1] < capband[1] and b[3] > capband[0]: Wn.append("%s: فوق مكان الكابشن (%.0f%% من الشاشة)، نزّله أو ارفعه أو خل caps: off" % (nm, capband[0] * 100 + 5.5))
+            if k in BD_OVER: vis.append((at, out, b, nm, k))
+        for x in range(len(vis)):
+            for y in range(x + 1, len(vis)):
+                A_, B_ = vis[x], vis[y]
+                if A_[0] >= B_[1] or B_[0] >= A_[1]: continue
+                if A_[4] != "text" and B_[4] != "text" and A_[4] != "num" and B_[4] != "num": continue
+                a, b = A_[2], B_[2]; iw = min(a[2], b[2]) - max(a[0], b[0]); ih = min(a[3], b[3]) - max(a[1], b[1])
+                if iw <= 0 or ih <= 0: continue
+                sm = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1])) or 1e-6
+                if iw * ih / sm > 0.15: Wn.append("%s يغطي على %s" % (A_[3], B_[3]))
+    return E, Wn
+BD_DEMO = {"type": "board", "mode": "full", "bg": "chalk", "title": "مثال", "scenes": [
+    {"at": 0, "items": [{"k": "text", "t": "الفكرة باختصار", "x": 0.5, "y": 0.18, "size": 9, "color": "yellow", "at": 0.2},
+                        {"k": "char", "who": "kid", "x": 0.3, "y": 0.52, "size": 30, "pose": "think", "mood": "think", "at": 0.9},
+                        {"k": "icon", "name": "bulb", "x": 0.72, "y": 0.42, "size": 18, "color": "yellow", "at": 1.5},
+                        {"k": "arrow", "pts": [[0.45, 0.48], [0.6, 0.44]], "at": 1.3, "color": "white"}]},
+    {"at": 3.6, "tr": "erase", "items": [{"k": "text", "t": "ثلاث خطوات", "x": 0.5, "y": 0.16, "size": 8, "color": "pink", "at": 0.4},
+                        {"k": "bars", "x": 0.5, "y": 0.5, "w": 0.66, "h": 0.3, "vals": [3, 6, 9], "labels": ["اسأل", "جرّب", "ثبّت"], "at": 0.9, "colors": ["blue", "green", "yellow"]}]}]}
+def cmd_board(work, args):
+    """hs board <work> add <ملف.json|-> [--dry]   يضيف سبورة (أو قائمة سبورات) بعد ما يفحصها
+hs board <work> check                       يفحص كل السبورات: طالع برا؟ يغطي على شي؟ فوق الكابشن؟
+hs board <work> list                        السبورات بتوقيتها
+hs board <work> rm <id>                     يشيل سبورة
+hs board <work> demo [<الثانية>]            يحط سبورة مثال تشوف فيها الشكل"""
+    sub = args[0] if args else "list"; st = load_studio(work); Hh = hs_of(st); Ls = Hh.setdefault("layers", []); dur = ffdur(J(work, "cutz.mp4")) or None
+    if sub == "list":
+        B = [L for L in Ls if L.get("type") == "board"]
+        if not B: print("ما فيه سبورة بهالمقطع."); return
+        for L in B:
+            sc = L.get("scenes") or [{"items": L.get("items") or []}]; tx = [str(i.get("t")) for s_ in sc for i in (s_.get("items") or []) if (i.get("k") or "text") == "text" and i.get("t")]
+            print("%s  %.2f → %.2f  %s  %s  %d مشهد  %s" % (L.get("id"), L.get("s", 0), L.get("e", 0), L.get("mode") or "full", L.get("bg") or "chalk", len(sc), " · ".join(tx)[:90]))
+        return
+    if sub == "check":
+        bad = 0
+        for L in [L for L in Ls if L.get("type") == "board"]:
+            e_, w_ = bd_check(work, L, dur); bad += len(e_) + len(w_)
+            for m in e_: print("خطأ: " + m)
+            for m in w_: print("تنبيه: " + m)
+        print("السبورات سليمة." if not bad else "%d ملاحظة." % bad); sys.exit(1 if bad else 0)
+    if sub == "rm":
+        bid = args[1] if len(args) > 1 else sys.exit("hs board <work> rm <id>")
+        n0 = len(Ls); Hh["layers"] = [L for L in Ls if not (L.get("type") == "board" and L.get("id") == bid)]
+        if len(Hh["layers"]) == n0: sys.exit("ما لقيت سبورة بالرقم " + bid)
+        snapshot(work, "قبل: شيل سبورة"); wj(J(work, "studio.json"), st); print("انشالت " + bid); return
+    if sub in ("add", "demo"):
+        if sub == "demo":
+            at = float(args[1]) if len(args) > 1 else 1.0; new = [dict(json.loads(json.dumps(BD_DEMO)), s=round(at, 2), e=round(at + 7.5, 2))]
+        else:
+            src = args[1] if len(args) > 1 else sys.exit(cmd_board.__doc__)
+            try: data = json.loads(sys.stdin.read() if src == "-" else open(src, encoding="utf-8").read())
+            except Exception as ex: sys.exit("الملف مو JSON سليم: %s" % str(ex)[:200])
+            new = data if isinstance(data, list) else [data]
+        errs, warns = [], []
+        for L in new:
+            if not isinstance(L, dict): sys.exit("كل سبورة لازم كائن JSON")
+            L["type"] = "board"; L.setdefault("mode", "full"); L.setdefault("bg", "chalk")
+            if "e" not in L and isinstance(L.get("scenes"), list) and L["scenes"]: L["e"] = round(float(L.get("s", 0)) + max(float(x.get("at", 0) or 0) for x in L["scenes"]) + 3.5, 2)
+            if dur: L["e"] = round(min(float(L.get("e", 0)), dur), 3)
+            e_, w_ = bd_check(work, L, dur); errs += e_; warns += w_
+        for m in errs: print("خطأ: " + m)
+        if errs: sys.exit("ما أضفت شي. صلّح الأخطاء فوق وأعد.")
+        if "--dry" in args:
+            for m in warns: print("تنبيه: " + m)
+            print("الفحص تمام (ما أضفت شي، --dry)."); return
+        snapshot(work, "قبل: سبورة")
+        used = {str(L.get("id")) for L in Ls}; nxt = 1
+        for L in new:
+            if L.get("id") and any(x.get("id") == L["id"] and x.get("type") == "board" for x in Ls): Hh["layers"] = Ls = [x for x in Ls if not (x.get("id") == L["id"] and x.get("type") == "board")]; used = {str(x.get("id")) for x in Ls}
+            elif not L.get("id") or str(L["id"]) in used:
+                while "bd%d" % nxt in used: nxt += 1
+                L["id"] = "bd%d" % nxt
+            L.setdefault("track", 2); Ls.append(L); used.add(str(L["id"]))
+        wj(J(work, "studio.json"), st)
+        print("انضافت %d سبورة: %s" % (len(new), ", ".join("%s (%.1f→%.1f %s)" % (L["id"], L.get("s", 0), L.get("e", 0), L.get("mode")) for L in new)))
+        for m in warns: print("تنبيه: " + m)
+        return
+    sys.exit(cmd_board.__doc__)
+def cmd_speed(work, args):
+    """hs speed <work> status | <1..1.5> | off | fit <tiktok|instagram|x|linkedin|ثواني>
+       تسريع جزء (4.68): part <من> <إلى> [x2|x3|x4|1.5] [noramp] · auto [x2] [min=2] · parts · clear"""
+    sub = args[0] if args else "status"; st = load_studio(work); hs = hs_of(st)
+    caps = rj(J(work, "caps.json"), {}) or {}; total = float(caps.get("total") or 0)
+    def rate_of(a, d=2.0):
+        for x in a:
+            m = re.match(r"^[x×]?(\d+(?:\.\d+)?)$", x)
+            if m and not x.startswith("min="): return float(m.group(1))
+        return d
+    if sub in ("part", "parts", "auto", "clear"):   # 4.68: تسريع جزء
+        if sub == "part":
+            if len(args) < 3: sys.exit(cmd_speed.__doc__)
+            try: a_, b_ = float(args[1]), float(args[2])
+            except ValueError: sys.exit("part <من> <إلى> بالثواني")
+            try: L = speed_part_add(work, a_, b_, rate_of(args[3:]), "noramp" not in args[3:])
+            except ValueError as e: sys.exit(str(e))
+            print("تم: تسريع ×%g من %.1f لـ %.1f ث%s · المقطع %.1f ث ← %.1f ث" % (L["r"], L["s"], L["e"], "" if L["ramp"] else " (بدون دخول ناعم)", total, speed_out(hs_of(load_studio(work)), total))); return
+        if sub == "auto":
+            mg = 2.0
+            for x in args[1:]:
+                if x.startswith("min="):
+                    try: mg = max(1.2, float(x[4:]))
+                    except ValueError: pass
+            Q = speed_quiet(work, mg)
+            if not Q: print("ما لقيت أجزاء بدون كلام أطول من %.1f ث" % mg); return
+            r_ = rate_of(args[1:])
+            for a_, b_ in Q: speed_part_add(work, a_, b_, r_ if args[1:] and any(re.match(r"^[x×]?\d", x) for x in args[1:]) else (3.0 if b_ - a_ >= 6 else 2.0))
+            print("تم: سرّعت %d جزء بدون كلام (%s) · المقطع %.1f ث ← %.1f ث" % (len(Q), "، ".join("%.1f-%.1f" % q for q in Q), total, speed_out(hs_of(load_studio(work)), total))); return
+        if sub == "clear":
+            n = sum(1 for L in hs.get("layers") or [] if L.get("type") == "speed"); hs["layers"] = [L for L in hs.get("layers") or [] if L.get("type") != "speed"]
+            wj(J(work, "studio.json"), st); print("تم: شلت %d تسريع" % n); return
+        P = speed_parts(hs)
+        if not P: print("ما فيه تسريع أجزاء"); return
+        for s_, e_, r_, rp_ in P: print("%.2f-%.2f  ×%g%s" % (s_, e_, r_, "" if rp_ else "  بدون دخول ناعم"))
+        print("المقطع %.1f ث ← %.1f ث" % (total, speed_out(hs, total))); return
+    def save(r):
+        if r <= 1.0: hs.pop("speed", None)
+        else: hs["speed"] = {"r": r}
+        wj(J(work, "studio.json"), st); r_ = speed_of(hs)
+        print("تم: سرعة المقطع %s · المدة %.1f ث ← %.1f ث" % ("عادية" if r_ == 1 else "×%g" % r_, total, speed_out(hs, total)) if total else "تم")
+    if sub == "status":
+        r = speed_of(hs); np_ = len(speed_parts(hs)); print("سرعة المقطع: %s%s · المدة %.1f ث ← %.1f ث · صوتك بنفس نبرته والموسيقى بسرعتها" % ("عادية" if r == 1 else "×%g" % r, (" · تسريع %d جزء" % np_) if np_ else "", total, speed_out(hs, total))); return
+    if sub == "off": save(1.0); return
+    if sub == "fit":
+        if len(args) < 2: sys.exit(cmd_speed.__doc__)
+        v = args[1]; tg = PLATFORMS[v]["maxS"] if v in PLATFORMS else None
+        if tg is None:
+            try: tg = float(v)
+            except ValueError: sys.exit("fit <tiktok|instagram|x|linkedin> أو عدد ثواني")
+        o1 = speed_out(hs, total) * speed_of(hs)   # 4.68: المدة بعد تسريع الأجزاء
+        if o1 <= tg: print("مقطعك %.1f ث ويدخل بـ %.0f ث بدون سرعة" % (o1, tg)); return
+        r = speed_need(o1, tg)
+        if r is None: sys.exit("يحتاج أكثر من ×%g عشان يدخل بـ %.0f ث (الكلام يصير سريع مرة). قصّر المقطع أول" % (SPEED_MAX, tg))
+        save(r); return
+    try: r = float(sub.lstrip("x×"))
+    except ValueError: sys.exit(cmd_speed.__doc__)
+    if not (1.0 <= r <= SPEED_MAX): sys.exit("السرعة بين 1 و %g" % SPEED_MAX)
+    save(round(r, 3))
+# ───────────────────────── 4.58: الزاوية الثانية (Multicam) ─────────────────────────
+# صوّر بجوالين أو كاميرتين: الملف الثاني يتزامن مع صوت التصوير الأساسي لحاله (بصمة الصوت، بدون ما تصفّق)، ويتقص بنفس قص المقطع
+# فريم بفريم (angle/NNNNN.jpg بجنب vfr)، والتبديل بين الزاويتين طبقات «زاوية ٢» بالتايم لاين (تمشي مع أي قص بعدها). الرسم بـ ext.js.
+ANGLE_DEF = {"x": 0.5, "y": 0.4, "z": 1.0}
+ANGLE_RATE = 100   # بصمة الصوت: 100 قيمة بالثانية (دقة 10 جزء من الثانية)
+def angle_of(hs): return {**ANGLE_DEF, **((hs or {}).get("angle") or {})}
+def angle_layers(hs): return [L for L in (hs or {}).get("layers") or [] if L.get("type") == "angle" and not L.get("off")]
+def _angle_env(path, cwd=None, rate=ANGLE_RATE):
+    """طاقة الصوت (لوغاريتم) كل 1/rate ثانية، من صوت الكلام فقط (120 إلى 3400 هيرتز)."""
+    sr = 8000; hop = sr // rate
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", str(sr), "-af", "highpass=f=120,lowpass=f=3400", "-f", "s16le", "-"], capture_output=True, cwd=cwd, timeout=1800)
+    raw = r.stdout; a = array.array("h"); a.frombytes(raw[:len(raw) // 2 * 2])
+    if sys.byteorder == "big": a.byteswap()
+    out = []; lg = math.log10
+    for i in range(0, len(a) - hop + 1, hop):
+        seg = a[i:i + hop]; out.append(lg(sum(x * x for x in seg) / hop + 1.0))
+    return out
+def _env_down(e, k): return [sum(e[i:i + k]) / k for i in range(0, len(e) - k + 1, k)]
+def _ncc(x, y, lags, min_ov=0.5):
+    """أحسن إزاحة: y[i+l] تقابل x[i]. ارتباط بيرسون على الجزء المشترك. يرجّع (الإزاحة، الدرجة)."""
+    import operator
+    nx, ny = len(x), len(y); best = (0, -2.0)
+    if not nx or not ny: return best
+    px = [0.0]; px2 = [0.0]
+    for v in x: px.append(px[-1] + v); px2.append(px2[-1] + v * v)
+    py = [0.0]; py2 = [0.0]
+    for v in y: py.append(py[-1] + v); py2.append(py2[-1] + v * v)
+    need = max(8, int(nx * min_ov)); mul = operator.mul
+    for l in lags:
+        i0 = max(0, -l); i1 = min(nx, ny - l); n = i1 - i0
+        if n < need: continue
+        sx = px[i1] - px[i0]; sy = py[i1 + l] - py[i0 + l]
+        vx = (px2[i1] - px2[i0]) - sx * sx / n; vy = (py2[i1 + l] - py2[i0 + l]) - sy * sy / n
+        if vx <= 1e-9 or vy <= 1e-9: continue
+        c = (sum(map(mul, x[i0:i1], y[i0 + l:i1 + l])) - sx * sy / n) / math.sqrt(vx * vy)
+        if c > best[1]: best = (l, c)
+    return best
+def _env_active(e, i0, i1):
+    seg = e[i0:i1]
+    if len(seg) < 4: return 0.0
+    m = sum(seg) / len(seg); return math.sqrt(sum((v - m) ** 2 for v in seg) / len(seg))
+def angle_sync(src_env, ang_env, rate=ANGLE_RATE, log=None):
+    """يلقى إزاحة الزاوية الثانية: [[من، إلى، الإزاحة]] بوقت الأصل (الزاوية = الأصل + الإزاحة)، والدرجة.
+    أول شي إزاحة عامة (أنشط 40 ثانية بالأصل مقابل كل الزاوية، بدقة 1/10 ثم 1/100)، وبعدين تتأكد كل 4 ثواني لوحدها
+    (لو الأصل فيه قطع أو مقاطع مضافة، كل جزء يلقى مكانه، والجزء اللي ما له مقابل ما يتغطى)."""
+    k = rate // 10; xs, ys = _env_down(src_env, k), _env_down(ang_env, k)
+    if len(xs) < 20 or len(ys) < 20: raise ValueError("الصوت قصير، ما أقدر أطابق")
+    sw = len(ys) < len(xs)   # العيّنة من الأقصر (لو الزاوية الثانية بدأت متأخر أو وقفت بدري) وندوّرها بالأطول
+    A10, B10, A100, B100 = (ys, xs, ang_env, src_env) if sw else (xs, ys, src_env, ang_env)
+    W = min(len(A10), 400); bi, bv = 0, -1.0
+    for i in range(0, max(1, len(A10) - W + 1), 25):
+        v = _env_active(A10, i, i + W)
+        if v > bv: bi, bv = i, v
+    l10, c10 = _ncc(A10[bi:bi + W], B10, range(-int(W * 0.5), len(B10) - int(W * 0.5)), 0.6)
+    if c10 < 0.35: raise ValueError("ما لقيت نفس الكلام بالزاويتين (الصوت ما يتطابق). تأكد إن التصويرين لنفس اللحظة وفيهم صوت")
+    p0 = bi * k; l, gc = _ncc(A100[p0:p0 + W * k], B100, range(p0 + l10 * k - 2 * k, p0 + l10 * k + 2 * k + 1), 0.6)
+    g = (p0 - l) if sw else (l - p0)   # إزاحة بالعينات: الزاوية[i+g] = الأصل[i]
+    if log: log("التزامن: %.2f ث (تطابق %d%%)" % (g / rate, int(gc * 100)))
+    # التأكد جزء جزء (3 ثواني، كل ثانية): الأصل لو فيه قطع، كل جزء يلقى مكانه بالزاوية
+    win, step, loc, n = 3 * rate, rate, int(0.3 * rate), len(src_env); res = []
+    starts = list(range(0, max(1, n - win + 1), step))
+    if n > win and starts[-1] != n - win: starts.append(n - win)
+    for i in starts:
+        if _env_active(src_env, i, i + win) < 0.12: res.append((i, "sil")); continue
+        if min(i + win + g, len(ang_env)) - max(i + g, 0) < 0.6 * win: res.append((i, "out")); continue   # الزاوية ما تغطي هذا الجزء
+        x = src_env[i:i + win]; l, c = _ncc(x, ang_env, [i + g + d for d in range(-loc, loc + 1)], 0.6)
+        if c >= 0.5: res.append((i, (l - i) / rate)); continue
+        xd = _env_down(x, k); rg = range(-len(xd) // 2, len(ys)); lc, cc = _ncc(xd, ys, rg, 0.6)   # ندوّر الجزء بكل الزاوية
+        c_2 = _ncc(xd, ys, [q for q in rg if abs(q - lc) > 5], 0.6)[1]
+        if cc >= 0.7 and cc - c_2 >= 0.08:   # تطابق واضح ومو مكرر بمكان ثاني
+            l2, c2 = _ncc(x, ang_env, [lc * k + d for d in range(-2 * k, 2 * k + 1)], 0.6)
+            if c2 >= 0.6: res.append((i, (l2 - i) / rate)); continue
+        res.append((i, "fail"))
+    lab = [o for _, o in res]; num = [j for j, o in enumerate(lab) if not isinstance(o, str)]
+    for j, o in enumerate(lab):
+        if o == "fail":   # بين جزئين معروفين: حد قطع (يتحدد تحت بالضبط)، وإلا ما له مقابل
+            lab[j] = "sil" if any(q < j for q in num) and any(q > j for q in num) else "out"
+    prev = g / rate
+    for j, o in enumerate(lab):
+        if o == "sil": lab[j] = prev
+        elif o != "out": prev = o
+    runs = []   # [من، إلى، الإزاحة أو None] بالثواني
+    for j, (i, _) in enumerate(res):
+        o = None if lab[j] == "out" else lab[j]
+        t0 = 0.0 if j == 0 else (i + win / 2.0) / rate - step / 2.0 / rate; t1 = n / rate if j == len(res) - 1 else (res[j + 1][0] + win / 2.0) / rate - step / 2.0 / rate
+        if runs and ((runs[-1][2] is None and o is None) or (runs[-1][2] is not None and o is not None and abs(runs[-1][2] - o) < 0.025)): runs[-1][1] = round(t1, 3)
+        else: runs.append([round(max(0.0, t0), 3), round(t1, 3), (round(o, 3) if o is not None else None)])
+    # حد التبديل بين إزاحتين (أصل فيه قطع): نلقى اللحظة بالضبط (1/100 ث) اللي قبلها يطابق الأولى وبعدها الثانية
+    def zs(e):
+        m = sum(e) / max(1, len(e)); sd = math.sqrt(sum((v - m) ** 2 for v in e) / max(1, len(e))) or 1.0; return [(v - m) / sd for v in e]
+    if sum(1 for r in runs if r[2] is not None) > 1:
+        zx, zy = zs(src_env), zs(ang_env); ny = len(zy)
+        for j in range(len(runs) - 1):
+            oa, ob = runs[j][2], runs[j + 1][2]
+            if oa is None or ob is None: continue
+            tb = int(round(runs[j][1] * rate)); a0 = max(int(runs[j][0] * rate), tb - int(3 * rate)); b0 = min(int(runs[j + 1][1] * rate), tb + int(3 * rate), len(zx))
+            la, lb = int(round(oa * rate)), int(round(ob * rate)); da = [0.0]; db = [0.0]
+            for t in range(a0, b0):
+                ya = zy[t + la] if 0 <= t + la < ny else 0.0; yb = zy[t + lb] if 0 <= t + lb < ny else 0.0
+                da.append(da[-1] + (zx[t] - ya) ** 2); db.append(db[-1] + (zx[t] - yb) ** 2)
+            if len(da) < 3: continue
+            best = min(range(len(da)), key=lambda k_: da[k_] + (db[-1] - db[k_])); sb = round((a0 + best) / rate, 3)
+            runs[j][1] = sb; runs[j + 1][0] = sb
+        runs = [r for r in runs if r[1] - r[0] > 0.001]
+    return {"off": round(g / rate, 3), "score": round(gc, 3), "runs": runs}
+def angle_source(work):
+    """الملف اللي انقص منه المقطع (src.mov أو أصل المشروع) والقطع المحفوظة منه بالترتيب، بنفس تقريب الفريمات حق القص."""
+    cut = rj(J(work, "cut.json"), {}) or {}; med = rj(media_path(work), {}) or {}
+    keep = _segs(med.get("keep") or cut.get("keep"))
+    raw = not cut.get("base") and cut.get("src") != "cutz" and os.path.isfile(J(work, "src.mov"))
+    src = J(work, "src.mov") if raw else cut_base(work)
+    if not os.path.isfile(src): src = J(work, "cutz.mp4"); keep = []
+    if not keep: d = probe_dur(src) or 0; keep = [(0.0, float(d))]
+    if raw:   # نفس _snap حق 03_cut_zoom.py
+        from fractions import Fraction as _Fr
+        try:
+            fr = _Fr(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", src], capture_output=True, text=True, timeout=30).stdout.strip().split("\n")[0])
+            fr = fr if 10 <= fr <= 121 else _Fr(30)
+        except Exception: fr = _Fr(30)
+        sn = lambda t: float(round(_Fr(t).limit_denominator(100000) * fr) / fr)
+        keep = [(sn(a), sn(b)) for a, b in keep]; keep = [x for x in keep if x[1] - x[0] >= 1.0 / float(fr)]
+    return src, keep
+def _jpg_size(path):
+    try:
+        b = open(path, "rb").read(65536)
+        for m in (b"\xff\xc0", b"\xff\xc2"):
+            i = b.find(m)
+            if i > 0: import struct; h, w = struct.unpack(">HH", b[i + 5:i + 9]); return w, h
+    except Exception: pass
+    return 0, 0
+def angle_sig(work):
+    A = angle_of(hs_of(load_studio(work))); f = J(work, A.get("src") or "-")
+    try: fs = "%d-%d" % (os.path.getsize(f), int(os.path.getmtime(f)))
+    except OSError: fs = "0"
+    src, keep = angle_source(work)
+    k = json.dumps([vsig(work), _nvf(work), [list(x) for x in keep], A.get("src"), fs, A.get("runs"), A.get("x"), A.get("y"), A.get("z")])
+    return hashlib.md5(k.encode("utf-8")).hexdigest()[:12]
+def angle_frame_map(work, A=None):
+    """لكل فريم بالمقطع (1..N): وقته بالزاوية الثانية أو None. يرجّع (القائمة، مدة الزاوية)."""
+    A = A or angle_of(hs_of(load_studio(work))); n = _nvf(work); src, keep = angle_source(work)
+    adur = float(A.get("dur") or probe_dur(J(work, A["src"])) or 0); runs = A.get("runs") or [[0, 1e9, A.get("off") or 0]]
+    starts, acc = [], 0.0
+    for a, b in keep: starts.append(acc); acc += b - a
+    out = []; k = 0
+    for i in range(1, n + 1):
+        tc = (i - 1) / 30.0
+        while k + 1 < len(keep) and tc >= starts[k] + (keep[k][1] - keep[k][0]) - 1e-6: k += 1
+        ts = keep[k][0] + max(0.0, tc - starts[k]); o = None
+        for r0, r1, ro in runs:
+            if r0 - 1e-6 <= ts < r1 + 1e-6: o = ro; break
+        ta = (ts + o) if o is not None else None
+        out.append(ta if ta is not None and 0.0 <= ta <= adur - 1.0 / 30 else None)
+    return out, adur
+def angle_build(work, log=print, force=False):
+    """يطلّع فريمات الزاوية الثانية (angle/NNNNN.jpg) بنفس قص المقطع وعدد فريماته. الفريم اللي ما له مقابل ياخذ الفريم الأصلي."""
+    st = load_studio(work); hs = hs_of(st); A = angle_of(hs)
+    if not A.get("src") or not A.get("runs"): return {"ok": False, "msg": "ما فيه زاوية ثانية متزامنة"}
+    if not os.path.isfile(J(work, A["src"])): return {"ok": False, "msg": "ما لقيت ملف الزاوية الثانية"}
+    n = _nvf(work)
+    if not n: return {"ok": False, "msg": "فريمات المقطع ما جهزت للحين"}
+    sig = angle_sig(work); meta = rj(J(work, ".hs", "angle.json"), {}) or {}
+    if not force and meta.get("sig") == sig and os.path.isdir(J(work, "angle")) and len(os.listdir(J(work, "angle"))) >= n: return {"ok": True, "cached": True, "sig": sig, "have": meta.get("have") or []}
+    fm, adur = angle_frame_map(work, A); w, h = _jpg_size(J(work, "vfr", "00001.jpg"))
+    if not w: w, h = vid_size(J(work, "cutz.mp4"))
+    w, h = int(w) // 2 * 2 or 1080, int(h) // 2 * 2 or 1920
+    x, y, z = max(0.0, min(1.0, float(A["x"]))), max(0.0, min(1.0, float(A["y"]))), max(1.0, min(3.0, float(A["z"])))
+    hk = hdr_kind(J(work, A["src"])); pre = (hdr_vf(work, hk) + ",") if hk else ""
+    vf = "fps=30,%sscale='trunc(iw*max(%d/iw\\,%d/ih)*%.3f/2)*2':'trunc(ih*max(%d/iw\\,%d/ih)*%.3f/2)*2',crop=%d:%d:'(iw-%d)*%.4f':'(ih-%d)*%.4f',setsar=1" % (pre, w, h, z, w, h, z, w, h, w, x, h, y)
+    new = J(work, ".hs", "angle.new"); shutil.rmtree(new, ignore_errors=True); os.makedirs(new)
+    runs = []   # [أول فريم، آخر فريم، وقت الزاوية]
+    for i, ta in enumerate(fm, 1):
+        if ta is None: continue
+        if runs and runs[-1][1] == i - 1 and abs((runs[-1][2] + (i - runs[-1][0]) / 30.0) - ta) < 0.02: runs[-1][1] = i
+        else: runs.append([i, i, ta])
+    log("أطلّع فريمات الزاوية الثانية (%d جزء)…" % len(runs)); rel = os.path.relpath(J(work, A["src"]), work)
+    def one(r):
+        i0, i1, ta = r
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.4f" % ta, "-i", rel, "-an", "-vf", vf, "-frames:v", str(i1 - i0 + 1), "-start_number", str(i0), "-q:v", "3",
+                        os.path.join(os.path.relpath(new, work), "%05d.jpg")], capture_output=True, cwd=work, timeout=1800)
+    ths = []
+    for r in runs:
+        while len([t for t in ths if t.is_alive()]) >= 3: time.sleep(0.05)
+        t_ = threading.Thread(target=one, args=(r,), daemon=True); t_.start(); ths.append(t_)
+    for t_ in ths: t_.join()
+    have = []; miss = 0
+    for i in range(1, n + 1):
+        f = os.path.join(new, "%05d.jpg" % i)
+        if os.path.exists(f) and os.path.getsize(f) > 500:
+            if have and have[-1][1] == i - 1: have[-1][1] = i
+            else: have.append([i, i])
+            continue
+        miss += 1; s_ = J(work, "vfr", "%05d.jpg" % i)
+        try: os.link(s_, f)
+        except OSError: shutil.copyfile(s_, f)
+    old = J(work, ".hs", "angle.old"); shutil.rmtree(old, ignore_errors=True)
+    if os.path.isdir(J(work, "angle")): os.replace(J(work, "angle"), old)
+    os.replace(new, J(work, "angle")); shutil.rmtree(old, ignore_errors=True)
+    apv = J(work, ".hs", "apv"); shutil.rmtree(apv, ignore_errors=True); os.makedirs(apv)   # نسخة 540 للمعاينة (أخف 4 مرات)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-start_number", "1", "-i", os.path.join("angle", "%05d.jpg"), "-vf", "scale=540:-2", "-q:v", "5", "-start_number", "1", os.path.join(".hs", "apv", "%05d.jpg")], capture_output=True, cwd=work, timeout=1800)
+    wj(J(work, ".hs", "angle.json"), {"sig": sig, "n": n, "have": have, "at": int(time.time())})
+    st = load_studio(work); hs = hs_of(st)
+    if hs.get("angle"): hs["angle"]["sig"] = sig; hs["angle"]["cover"] = round(1 - miss / float(n), 3); wj(J(work, "studio.json"), st)
+    return {"ok": True, "sig": sig, "have": have, "n": n, "miss": miss}
+_ANG = {"busy": False}
+def angle_ensure(work, log=None, bg=False):
+    """قبل التصدير ولما ينفتح الاستوديو: لو القص أو الفريمات تغيّرت، تنبني فريمات الزاوية الثانية من جديد."""
+    hs = hs_of(load_studio(work))
+    if not angle_of(hs).get("runs") or not angle_layers(hs): return None
+    meta = rj(J(work, ".hs", "angle.json"), {}) or {}
+    try:
+        if meta.get("sig") == angle_sig(work) and os.path.isdir(J(work, "angle")): return {"ok": True, "cached": True}
+    except Exception: pass
+    if _ANG["busy"]: return None
+    def go():
+        _ANG["busy"] = True
+        try: return angle_build(work, log or (lambda *a: None))
+        except Exception as e:
+            if log: log("تنبيه: ما قدرت أجهّز الزاوية الثانية (%s). التصدير يكمل بالزاوية الأولى." % str(e)[:140])
+            return None
+        finally: _ANG["busy"] = False
+    if bg: threading.Thread(target=go, daemon=True).start(); return None
+    return go()
+def angle_add(work, path, log=print):
+    """يضيف ملف الزاوية الثانية للمشروع (assets/angle/) ويزامنه."""
+    if not os.path.isfile(path): raise ValueError("ما لقيت الملف: " + path)
+    if os.path.splitext(path)[1].lower() not in VID_EXT: raise ValueError("ارفع مقطع فيديو (mp4 · mov · m4v · webm)")
+    fp = os.path.normpath(os.path.abspath(path)); wk = os.path.normpath(os.path.abspath(work))
+    if fp.startswith(wk + os.sep): rel = os.path.relpath(fp, wk).replace(os.sep, "/")
+    else:
+        os.makedirs(J(work, "assets", "angle"), exist_ok=True); nm = re.sub(r"[^\w.\-]+", "_", os.path.basename(path)); rel = "assets/angle/" + nm
+        if os.path.normpath(J(work, rel)) != fp: shutil.copy2(path, J(work, rel))
+    if "video" not in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", J(work, rel)], capture_output=True, text=True, timeout=60).stdout: raise ValueError("الملف ما فيه صورة")
+    if not _has_audio(J(work, rel)): raise ValueError("الزاوية الثانية لازم فيها صوت (التزامن يصير من الصوت)")
+    st = load_studio(work); hs = hs_of(st); A = hs.get("angle") or {}
+    hs["angle"] = {**{k: A[k] for k in ("x", "y", "z") if k in A}, "src": rel, "dur": round(probe_dur(J(work, rel)) or 0, 3)}
+    wj(J(work, "studio.json"), st)
+    return angle_resync(work, log)
+def angle_resync(work, log=print, manual=None):
+    st = load_studio(work); hs = hs_of(st); A = hs.get("angle") or {}
+    if not A.get("src"): raise ValueError("ما فيه زاوية ثانية. أضفها أول: hs angle <work> add <ملف>")
+    if manual is not None: A.update(off=round(float(manual), 3), score=None, runs=[[0.0, 1e9, round(float(manual), 3)]], manual=True)
+    else:
+        src, _k = angle_source(work); log("أطابق صوت الزاويتين…")
+        r = angle_sync(_angle_env(os.path.relpath(src, work), cwd=work), _angle_env(A["src"], cwd=work), log=log)
+        A.update(off=r["off"], score=r["score"], runs=r["runs"]); A.pop("manual", None)
+    hs["angle"] = A; wj(J(work, "studio.json"), st)
+    return angle_build(work, log, force=True)
+def angle_have_t(work):
+    """مدى التايم لاين اللي الزاوية الثانية تغطيه (بالثواني)."""
+    meta = rj(J(work, ".hs", "angle.json"), {}) or {}; have = meta.get("have") or []
+    ok, vm = media_map(work); total = float((rj(J(work, "caps.json"), {}) or {}).get("total") or 0)
+    def cov(t):
+        o = t
+        if vm:
+            for s0, e0, m0 in vm:
+                if t < e0: o = m0 + max(0.0, t - s0); break
+        i = int(round(o * 30)) + 1; return any(a <= i <= b for a, b in have)
+    return cov, total
+def angle_auto(work, hold=None):
+    """يوزّع التبديل على الجمل: الأساسية أطول، والثانية قطعة أقصر، والتبديل دايم عند بداية جملة (مو وسط كلمة)."""
+    st = load_studio(work); hs = hs_of(st); caps = rj(J(work, "caps.json"), {}) or {}; cards = caps.get("cards") or []
+    cov, total = angle_have_t(work); total = total or float(caps.get("total") or 0)
+    ins = [(float(a), float(b)) for a, b in ((rj(J(work, "cut.json"), {}) or {}).get("insr") or [])]
+    hA = float(hold or 4.5); hB = max(1.8, hA * 0.65); seqA = [hA, hA * 1.3, hA * 1.1]; seqB = [hB, hB * 1.25, hB * 0.9]
+    pts = sorted({round(float(c["s"]), 3) for c in cards if 0.8 < float(c["s"]) < total - 0.8})
+    def ok(a, b):
+        if any(a < y and b > x for x, y in ins): return False
+        n = max(1, int((b - a) * 10)); return sum(1 for j in range(n) if cov(a + (j + 0.5) * (b - a) / n)) >= 0.9 * n
+    rs = []; cur_s = None; last = 0.0; ia = ib = 0
+    def put(a, b):   # الجزء كامل لو مغطى، وإلا أطول جزء مغطى منه يبدأ وينتهي عند حد جملة
+        if ok(a, b): rs.append((a, b)); return
+        q = [a] + [x for x in pts if a < x < b] + [b]; best = None
+        for u in range(len(q)):
+            for v in range(len(q) - 1, u, -1):
+                if q[v] - q[u] >= 1.2 and (not best or q[v] - q[u] > best[1] - best[0]) and ok(q[u], q[v]): best = (q[u], q[v]); break
+        if best: rs.append(best)
+    for p in pts:
+        if cur_s is None and p - last >= seqA[ia % 3]: cur_s = p; last = p; ia += 1
+        elif cur_s is not None and p - last >= seqB[ib % 3]: put(cur_s, p); cur_s = None; last = p; ib += 1
+    if cur_s is not None and total - cur_s >= 1.5: put(cur_s, total)
+    if not rs and cards and total > 2:   # مقطع قصير: الجملة اللي بالنص
+        c = cards[len(cards) // 2]; a, b = float(c["s"]), float(c["e"])
+        if b - a >= 1.0 and ok(a, b): rs.append((a, b))
+    Ls = [L for L in hs.get("layers") or [] if L.get("type") != "angle"]; hs["layers"] = Ls
+    for a, b in rs: Ls.append({"id": new_id(Ls), "type": "angle", "s": round(a, 3), "e": round(b, 3), "track": 0, "auto": True})
+    if isinstance(hs.get("angle"), dict): hs["angle"].pop("spk", None)
+    wj(J(work, "studio.json"), st); return rs
+# ───────────────────────── 4.65: التبديل حسب المتكلم (بودكاست بشخصين، لكل واحد جوال) ─────────────────────────
+# كل جوال يسمع الشخص اللي قدامه أعلى. نقارن صوت الجوالين كلمة كلمة (نفس اللحظة بعد التزامن): اللي صوته أعلى بجواله هو اللي يتكلم،
+# والصورة تروح لكاميرته. الفرق ينقسم لمجموعتين (اثنين يتكلمون)، ولو ما فيه مجموعتين واضحة (شخص واحد، أو الجوالين بنفس المكان) ما يغيّر شي.
+SPK_MIN_GAP = 0.3     # أقل فرق بين المتكلمين (لوغاريتم الطاقة = 3 dB)
+SPK_SEP = 2.0         # الفرق لازم أكبر من تذبذب كل مجموعة بمرتين (مو ضجة)
+SPK_MIN_SHARE = 0.08  # كل متكلم لازم له 8% من الكلام على الأقل
+def _aenv_cached(work, rel):
+    """بصمة صوت الملف (_angle_env) محفوظة بـ .hs عشان ما تنحسب كل مرة."""
+    f = J(work, rel)
+    try: k = hashlib.md5(("%s|%d|%d" % (rel, os.path.getsize(f), int(os.path.getmtime(f)))).encode("utf-8")).hexdigest()[:12]
+    except OSError: k = None
+    cf = J(work, ".hs", "aenv-%s.bin" % k) if k else None
+    if cf and os.path.isfile(cf):
+        a = array.array("d")
+        try:
+            with open(cf, "rb") as fh: a.frombytes(fh.read())
+            if len(a): return list(a)
+        except Exception: pass
+    e = _angle_env(rel, cwd=work)
+    if cf:
+        try:
+            os.makedirs(J(work, ".hs"), exist_ok=True)
+            with open(cf, "wb") as fh: fh.write(array.array("d", e).tobytes())
+        except OSError: pass
+    return e
+def _angle_put(rs, a, b, pts, ok):
+    """الجزء كامل لو الزاوية تغطيه، وإلا أطول جزء مغطى منه يبدأ وينتهي عند حد جملة."""
+    if ok(a, b): rs.append((a, b)); return
+    q = [a] + [x for x in pts if a < x < b] + [b]; best = None
+    for u in range(len(q)):
+        for v in range(len(q) - 1, u, -1):
+            if q[v] - q[u] >= 1.2 and (not best or q[v] - q[u] > best[1] - best[0]) and ok(q[u], q[v]): best = (q[u], q[v]); break
+    if best: rs.append(best)
+def _spk_split(D):
+    """D = [(الفرق، الوزن)]. يقسمها لمجموعتين (k-means بعد واحد). يرجّع (الواطي، العالي، الحد، التذبذب، نصيب الواطي)."""
+    xs = sorted(D); W = sum(w for _, w in xs) or 1.0
+    def pct(p):
+        acc = 0.0
+        for x, w in xs:
+            acc += w
+            if acc >= p * W: return x
+        return xs[-1][0]
+    lo, hi = pct(0.15), pct(0.85)
+    for _ in range(30):
+        m = (lo + hi) / 2.0; L = [(x, w) for x, w in xs if x < m]; H = [(x, w) for x, w in xs if x >= m]
+        if not L or not H: break
+        lo2 = sum(x * w for x, w in L) / sum(w for _, w in L); hi2 = sum(x * w for x, w in H) / sum(w for _, w in H)
+        if abs(lo2 - lo) < 1e-6 and abs(hi2 - hi) < 1e-6: break
+        lo, hi = lo2, hi2
+    m = (lo + hi) / 2.0; L = [(x, w) for x, w in xs if x < m]; H = [(x, w) for x, w in xs if x >= m]
+    if not L or not H: return lo, hi, m, 1e9, 0.0
+    wl, wh = sum(w for _, w in L), sum(w for _, w in H)
+    var = (sum(w * (x - lo) ** 2 for x, w in L) + sum(w * (x - hi) ** 2 for x, w in H)) / (wl + wh)
+    return lo, hi, m, math.sqrt(var), wl / (wl + wh)
+def _spk_words(work):
+    """4.65/4.66: يسمع الجوالين كلمة كلمة. يرجّع {ok, WS=[[بداية، نهاية، الفرق أو None]], mid, gap, ...} أو {ok: False, msg, gap?}.
+    الفرق أقل من mid = الشخص اللي قدام الجوال الثاني هو اللي يتكلم (صوته أعلى بجواله)."""
+    st = load_studio(work); hs = hs_of(st); A = angle_of(hs)
+    if not A.get("src") or not A.get("runs"): return {"ok": False, "msg": "ما فيه زاوية ثانية متزامنة"}
+    if not os.path.isfile(J(work, A["src"])): return {"ok": False, "msg": "ما لقيت ملف الزاوية الثانية"}
+    meta = rj(J(work, ".hs", "angle.json"), {}) or {}
+    if not meta.get("have"): return {"ok": False, "msg": "فريمات الزاوية الثانية لسه تتجهز، جرّب بعد شوي"}
+    caps = rj(J(work, "caps.json"), {}) or {}; cards = caps.get("cards") or []
+    if not cards: return {"ok": False, "msg": "ما فيه كابشن (التبديل يمشي على الجمل)"}
+    src, keep = angle_source(work); n = _nvf(work)
+    eA = _aenv_cached(work, os.path.relpath(src, work)); eB = _aenv_cached(work, A["src"])
+    starts, acc = [], 0.0
+    for a, b in keep: starts.append(acc); acc += b - a
+    runs = A.get("runs") or [[0, 1e9, A.get("off") or 0]]
+    TS, TA, k = [], [], 0   # فريم المقطع (من 0) ← وقته بالأصل ووقته بالزاوية
+    for i in range(n):
+        tc = i / 30.0
+        while k + 1 < len(keep) and tc >= starts[k] + (keep[k][1] - keep[k][0]) - 1e-6: k += 1
+        ts = keep[k][0] + max(0.0, tc - starts[k]); ta = None
+        for r0, r1, ro in runs:
+            if r0 - 1e-6 <= ts < r1 + 1e-6: ta = (ts + ro) if ro is not None else None; break
+        TS.append(ts); TA.append(ta)
+    src_t = lambda i: (TS[i], TA[i])
+    ok_m, vm = media_map(work)
+    def med(t):
+        if vm:
+            for s0, e0, m0 in vm:
+                if t < e0: return m0 + max(0.0, t - s0)
+        return t
+    ins = [(float(a), float(b)) for a, b in ((rj(J(work, "cut.json"), {}) or {}).get("insr") or [])]
+    R = ANGLE_RATE
+    def floor_(e):   # مستوى الضجة (أهدى 10%) بكل جوال
+        x = sorted(e[::5]) or [0.0]; return x[len(x) // 10]
+    fA, fB = floor_(eA), floor_(eB)
+    def word_d(s, e):   # نسبة الطاقة بين الجوالين بهالكلمة (لوغاريتم): موجب = الجوال الأساسي أعلى
+        if e - s < 0.04 or any(s < y and e > x for x, y in ins): return None
+        pa = pb = 0.0; c = 0; t = s
+        while t < e:
+            i = int(round(med(t) * 30))
+            if 0 <= i < n:
+                ts, ta = src_t(i)
+                if ta is not None:
+                    ja, jb = int(ts * R), int(ta * R)
+                    if 0 <= ja < len(eA) and 0 <= jb < len(eB): pa += 10 ** eA[ja]; pb += 10 ** eB[jb]; c += 1
+            t += 1.0 / 30
+        if c < 2 or pa <= c * 1.5 or pb <= c * 1.5: return None
+        if math.log10(pa / c) < fA + 0.6 and math.log10(pb / c) < fB + 0.6: return None   # سكتة (ضجة بس) ما تصوّت
+        return math.log10(pa / pb)
+    WS = []   # كل كلمة: [بدايتها، نهايتها، الفرق أو None]
+    for cd in cards:
+        for w in cd.get("w") or [{"s": cd["s"], "e": cd["e"]}]:
+            try: s, e = float(w["s"]), float(w["e"])
+            except (KeyError, TypeError, ValueError): continue
+            WS.append([s, e, word_d(s, e)])
+    WS.sort(key=lambda x: x[0]); W = [(d, e - s) for s, e, d in WS if d is not None]
+    if len(W) < 4: return {"ok": False, "msg": "الكلام قليل أو الزاوية الثانية ما تغطيه، ما أقدر أعرف مين يتكلم"}
+    lo, hi, mid, sd, share_lo = _spk_split(W); gap = hi - lo
+    if gap < SPK_MIN_GAP or gap < SPK_SEP * sd or min(share_lo, 1 - share_lo) < SPK_MIN_SHARE:
+        return {"ok": False, "gap": round(gap * 10, 1), "msg": "صوت الجوالين متقارب (فرق %.1f dB)، فما أقدر أعرف مين يتكلم. هذا يشتغل لو كل شخص قدامه جوال أو مايك. استخدم «وزّع تلقائي» بدالها" % (gap * 10)}
+    return {"ok": True, "st": st, "hs": hs, "A": A, "WS": WS, "mid": mid, "gap": gap, "cards": cards, "caps": caps, "ins": ins, "med": med, "vm": vm, "keep": keep, "src": src}
+def angle_speaker(work, swap=None, hold=None):
+    """4.65: يحط «زاوية ٢» على الجمل اللي يتكلم فيها الشخص اللي قدام الجوال الثاني (صوته أعلى بالجوال الثاني).
+    يرجّع {ok, made, gap(dB), share(نصيب الزاوية الثانية)} أو {ok: False, msg} بدون ما يغيّر الطبقات."""
+    R = _spk_words(work)
+    if not R.get("ok"): return {k: R[k] for k in ("ok", "msg", "gap") if k in R}
+    st, hs, WS, mid, gap, cards, caps, ins = R["st"], R["hs"], R["WS"], R["mid"], R["gap"], R["cards"], R["caps"], R["ins"]
+    if swap is None: swap = bool(((hs.get("angle") or {}).get("spk") or {}).get("swap"))
+    seq = []; prev = 0; pe = 0.0   # التبديل كلمة كلمة: يبدأ قبل أول كلمة للمتكلم الجديد بشوي (بالسكتة اللي قبلها، مو وسط كلمة)
+    for s, e, d in WS:
+        sp = (1 if (d < mid) != bool(swap) else 0) if d is not None else prev; prev = sp
+        if not seq or seq[-1][1] != sp: seq.append([round(max(pe, s - min(0.15, max(0.0, s - pe) / 2.0)), 3), sp])
+        pe = max(pe, e)
+    total = float(caps.get("total") or 0) or float(cards[-1]["e"])
+    hA = float(hold or 1.5)
+    while len(seq) > 1:   # أقصر من hold ثانية (الأقصر أول) يرجع للمتكلم اللي حوله: رد قصير «إيه» ما يقلب الكاميرا
+        ln = [(seq[j + 1][0] if j + 1 < len(seq) else total) - seq[j][0] for j in range(len(seq))]
+        j = min(range(len(seq)), key=lambda q: ln[q])
+        if ln[j] >= hA: break
+        if j == 0: seq[1][0] = seq[0][0]; seq.pop(0)
+        else: seq.pop(j)
+        k = 1
+        while k < len(seq):
+            if seq[k][1] == seq[k - 1][1]: seq.pop(k)
+            else: k += 1
+    cov, _t = angle_have_t(work); pts = sorted({round(float(c["s"]), 3) for c in cards} | {round(x[0], 3) for x in WS})
+    def ok(a, b):
+        if any(a < y and b > x for x, y in ins): return False
+        m_ = max(1, int((b - a) * 10)); return sum(1 for j in range(m_) if cov(a + (j + 0.5) * (b - a) / m_)) >= 0.9 * m_
+    rs = []
+    for j, (a, sp) in enumerate(seq):
+        if sp != 1: continue
+        a = 0.0 if j == 0 else a; b = seq[j + 1][0] if j + 1 < len(seq) else total
+        if b - a >= 0.5: _angle_put(rs, round(a, 3), round(b, 3), pts, ok)
+    Ls = [L for L in hs.get("layers") or [] if L.get("type") != "angle"]; hs["layers"] = Ls
+    for a, b in rs: Ls.append({"id": new_id(Ls), "type": "angle", "s": round(a, 3), "e": round(b, 3), "track": 0, "auto": True, "spk": True})
+    sh = sum(b - a for a, b in rs) / total if total else 0.0
+    hs["angle"]["spk"] = {"swap": bool(swap), "gap": round(gap * 10, 1), "share": round(sh, 3)}
+    wj(J(work, "studio.json"), st)
+    return {"ok": True, "made": len(rs), "gap": round(gap * 10, 1), "share": round(sh, 3), "swap": bool(swap), "rs": rs}
+def angle_auto_best(work, log=None):
+    """بعد إضافة الزاوية: لو فيه متكلمين واضحين (كل واحد بجواله) التبديل حسب المتكلم، وإلا التوزيع العادي على الجمل."""
+    try:
+        r = angle_speaker(work)
+        if r.get("ok"):
+            if log: log("التبديل حسب المتكلم: %d تبديل (فرق الصوت %.1f dB)" % (r["made"], r["gap"]))
+            return r["rs"]
+    except Exception as e:
+        if log: log("تنبيه: التبديل حسب المتكلم ما اشتغل (%s)" % str(e)[:120])
+    return angle_auto(work)
+# ───────────────────────── 4.66: صوت كل واحد من جواله (بودكاست بجوالين) ─────────────────────────
+# بعد «حسب المتكلم» (4.65) الصوت كان كله من الجوال الأساسي، فالشخص الثاني يطلع بعيد وفيه صدى. هنا كل كلمة تاخذ صوتها من الجوال
+# اللي قدام صاحبها: الجوال الثاني يتقص بنفس القص ويتزامن بنفس الإزاحة، ومستواه يتعدّل لين يطابق الأساسي، والتبديل بتلاشي قصير
+# بالسكتة اللي قبل الكلمة. الملف .hs/mic-<sig>.wav بزمن cutz.mp4، ويدخل مكان صوت المقطع بالمعاينة والتصدير وصوت الاستوديو.
+MIC_VER = 1
+MIC_FADE = 0.06      # التلاشي بين الجوالين (ثانية)
+MIC_MIN = 0.3        # دور أقصر من كذا يرجع للي حوله (كلمة غلط ما تقلب المايك)
+MIC_GMAX = 15.0      # أقصى تعديل لمستوى الجوال الثاني (dB)
+MICL = threading.Lock()
+def mic_on(hs): return bool((((hs or {}).get("angle") or {}).get("mic") or {}).get("on")) and bool(((hs or {}).get("angle") or {}).get("src"))
+def mic_sig(work):
+    k = json.dumps([angle_sig(work), vsig(work), _cards_key(work), MIC_VER, MIC_FADE, MIC_MIN])
+    return hashlib.md5(k.encode("utf-8")).hexdigest()[:12]
+def mic_ready(work, log=None, build=True):
+    """ملف صوت الجوالين لو «صوت كل واحد من جواله» شغّال (ويبنيه لو القص تغيّر)، وإلا None (الصوت الأصلي مثل قبل)."""
+    try:
+        if not mic_on(hs_of(load_studio(work))): return None
+        f = J(work, ".hs", "mic-%s.wav" % mic_sig(work))
+        if os.path.isfile(f): return f
+        if not build: return None
+        r = mic_build(work, log or (lambda m: None))
+        if not r.get("ok") and log: log("تنبيه: صوت الجوالين ما تركّب (%s). أكمل بصوت الجوال الأساسي." % (r.get("msg") or "")[:160])
+        return r.get("file") if r.get("ok") else None
+    except Exception as e:
+        if log: log("تنبيه: صوت الجوالين ما اشتغل (%s). أكمل بصوت الجوال الأساسي." % str(e)[:160])
+        return None
+def voice_src(work): return mic_ready(work) or J(work, "cutz.mp4")
+def _mic_runs(seq, total, h):
+    """seq = [[بداية، المتكلم]]: يدمج الأدوار الأقصر من h ثانية (الأقصر أول) باللي حولها."""
+    seq = [list(x) for x in seq]
+    while len(seq) > 1:
+        ln = [(seq[j + 1][0] if j + 1 < len(seq) else total) - seq[j][0] for j in range(len(seq))]
+        j = min(range(len(seq)), key=lambda q: ln[q])
+        if ln[j] >= h: break
+        if j == 0: seq[1][0] = seq[0][0]; seq.pop(0)
+        else: seq.pop(j)
+        k = 1
+        while k < len(seq):
+            if seq[k][1] == seq[k - 1][1]: seq.pop(k)
+            else: k += 1
+    return seq
+def mic_build(work, log=print, save=False):
+    """يبني صوت الجوالين. يرجّع {ok, file, gain(dB), share(نصيب الجوال الثاني)} أو {ok: False, msg}."""
+    with MICL:
+        sig = mic_sig(work); out = J(work, ".hs", "mic-%s.wav" % sig)
+        R = _spk_words(work)
+        if not R.get("ok"): return {"ok": False, "msg": R.get("msg") or "ما قدرت أعرف مين يتكلم", "gap": R.get("gap")}
+        A, WS, mid, caps, cards, ins, vm = R["A"], R["WS"], R["mid"], R["caps"], R["cards"], R["ins"], R["vm"]
+        cz = J(work, "cutz.mp4"); Dm = ffdur(cz)
+        if Dm <= 0: return {"ok": False, "msg": "ما فيه مقطع مقصوص"}
+        total = float(caps.get("total") or 0) or float(cards[-1]["e"])
+        # 1) مين يتكلم كل كلمة (الجوال الأعلى، بدون «اقلب الكاميرتين»: هذا صوت مو صورة)
+        seq = []; prev = 0; pe = 0.0
+        for s, e, d in WS:
+            sp = (1 if d < mid else 0) if d is not None else prev; prev = sp
+            if not seq or seq[-1][1] != sp: seq.append([round(max(pe, s - min(0.15, max(0.0, s - pe) / 2.0)), 3), sp])
+            pe = max(pe, e)
+        seq = _mic_runs(seq, total, MIC_MIN)
+        turns = [(0.0 if j == 0 else a, seq[j + 1][0] if j + 1 < len(seq) else total) for j, (a, sp) in enumerate(seq) if sp == 1]
+        def to_media(a, b):   # من وقت التايم لاين لوقت cutz.mp4 (لو القص فوري لسه ما انبنى)
+            if not vm: return [(a, b)]
+            o = []
+            for s0, e0, m0 in vm:
+                x0, x1 = max(a, s0), min(b, e0)
+                if x1 - x0 > 1e-3: o.append((m0 + x0 - s0, m0 + x1 - s0))
+            return o
+        cut_ = lambda iv: [p for a, b in iv for p in _iv_minus((a, b), ins)]
+        Bt = [p for a, b in cut_(turns) for p in to_media(a, b)]
+        # 2) الجوال الثاني على زمن المقطع: نفس القص ونفس الإزاحة (جزء جزء)
+        src, keep = angle_source(work); runs = A.get("runs") or [[0, 1e9, A.get("off") or 0]]
+        adur = float(A.get("dur") or probe_dur(J(work, A["src"])) or 0); SR = 48000
+        segs, acc = [], 0.0
+        for a, b in keep:
+            for r0, r1, ro in runs:
+                if ro is None: continue
+                x0, x1 = max(a, r0), min(b, r1)
+                if x1 - x0 > 0.01:
+                    t0, b0 = acc + (x0 - a), x0 + ro; L = x1 - x0
+                    if b0 < 0: t0 -= b0; L += b0; b0 = 0.0
+                    L = min(L, adur - b0)
+                    if L > 0.01: segs.append((t0, b0, L))
+            acc += b - a
+        if not segs: return {"ok": False, "msg": "الزاوية الثانية ما تغطي المقطع"}
+        segs.sort(); os.makedirs(J(work, ".hs"), exist_ok=True)
+        raw, bal, envf, tmp = (J(work, ".hs", x) for x in ("mic-b.raw", "mic-b.wav", "mic-env.f32", "mic-part.wav"))
+        try:
+            log("صوت الجوالين: أطلّع صوت الجوال الثاني…")
+            run(["ffmpeg", "-v", "error", "-y", "-i", J(work, A["src"]), "-vn", "-ac", "1", "-ar", str(SR), "-f", "s16le", raw], log)
+            rsz = os.path.getsize(raw); N = int(round(Dm * SR)); have = []
+            import wave as _wv
+            w = _wv.open(bal, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); pos = 0
+            with open(raw, "rb") as fr:
+                def zeros(k):
+                    while k > 0: c = min(k, 1 << 20); w.writeframes(b"\0\0" * c); k -= c
+                for t0, b0, L in segs:
+                    i0 = max(pos, int(round(t0 * SR))); i1 = min(N, int(round((t0 + L) * SR)))
+                    if i1 <= i0: continue
+                    zeros(i0 - pos); j0 = int(round((b0 + (i0 - int(round(t0 * SR))) / float(SR)) * SR)) * 2
+                    k = i1 - i0; fr.seek(min(j0, rsz)); buf = fr.read(k * 2); w.writeframes(buf); got = len(buf) // 2
+                    if got < k: zeros(k - got)
+                    if got > 0: have.append((i0 / float(SR), (i0 + got) / float(SR)))
+                    pos = i1
+                zeros(N - pos)
+            w.close()
+            Bt = [p for a, b in Bt for h0, h1 in have for p in [(max(a, h0), min(b, h1))] if p[1] - p[0] > 0.02]
+            if not Bt: return {"ok": False, "msg": "الشخص الثاني ما يتكلم بالجزء اللي يغطيه الجوال الثاني"}
+            # 3) مستوى الجوال الثاني يطابق الأساسي: وسط مستوى الكلام لكل واحد بجواله
+            dA, dB = _db10(cz), _db10(bal)
+            def med_t(t):
+                if vm:
+                    for s0, e0, m0 in vm:
+                        if t < e0: return m0 + max(0.0, t - s0)
+                return t
+            inB = lambda t: any(a <= t < b for a, b in Bt)
+            la, lb = [], []
+            for s, e, d in WS:
+                if d is None: continue
+                m0, m1 = med_t(s), med_t(e); isb = inB((m0 + m1) / 2.0)
+                for i in range(int(m0 * 100), int(m1 * 100)):
+                    X = dB if isb else dA
+                    if 0 <= i < len(X) and X[i] > -60: (lb if isb else la).append(X[i])
+            if len(la) < 10 or len(lb) < 10: return {"ok": False, "msg": "الكلام قليل، ما أقدر أطابق مستوى الجوالين"}
+            la.sort(); lb.sort(); gain = max(-MIC_GMAX, min(MIC_GMAX, la[len(la) // 2] - lb[len(lb) // 2]))
+            # 4) خريطة التبديل (1 = الجوال الثاني) 1000 بالثانية، والحواف تلاشي MIC_FADE
+            M = int(Dm * 1000) + 2; m = [0.0] * M
+            for a, b in Bt:
+                for i in range(max(0, int(round(a * 1000))), min(M, int(round(b * 1000)))): m[i] = 1.0
+            hw = max(1, int(MIC_FADE * 1000 / 2)); P_ = [0.0]
+            for v in m: P_.append(P_[-1] + v)
+            e_ = array.array("f", ((P_[min(M, i + hw)] - P_[max(0, i - hw)]) / float(min(M, i + hw) - max(0, i - hw)) for i in range(M)))
+            e_.extend([e_[-1]] * 2000)
+            if sys.byteorder == "big": e_.byteswap()
+            with open(envf, "wb") as f: e_.tofile(f)
+            log("صوت الجوالين: كل واحد من جواله (الجوال الثاني %+.1f dB)…" % gain)
+            try: ch_ = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "csv=p=0", cz], capture_output=True, text=True, timeout=30).stdout.strip().split("\n")[0] or 1)
+            except Exception: ch_ = 1
+            dm_ = ("pan=mono|c0=%s," % "+".join("%.4f*c%d" % (1.0 / ch_, i) for i in range(ch_))) if ch_ > 1 else ""   # نفس مستوى الصوت الأصلي (متوسط القنوات مثل -ac 1)
+            fc = ("[0:a]aresample=48000," + dm_ + "aformat=sample_fmts=flt:channel_layouts=mono[a];[1:a]aformat=sample_fmts=flt:channel_layouts=mono,volume=%.2fdB[b];"
+                  "[2:a]aresample=48000,aformat=sample_fmts=flt:channel_layouts=mono,asplit=2[m1][m2];[m2]aeval=1-val(0)[im];"
+                  "[a][im]amultiply[ax];[b][m1]amultiply[bx];[ax][bx]amix=inputs=2:duration=first:normalize=0%s[o]")
+            base_ = ["ffmpeg", "-v", "error", "-y", "-i", cz, "-i", bal, "-f", "f32le", "-ar", "1000", "-ac", "1", "-i", envf, "-filter_complex"]
+            tail_ = ["-map", "[o]", "-t", "%.3f" % Dm, "-ar", "48000", "-c:a", "pcm_s16le", tmp]
+            r = subprocess.run(base_ + [fc % (gain, ",alimiter=limit=0.97:level=0:latency=1")] + tail_, capture_output=True, text=True, errors="replace")
+            if r.returncode or not os.path.isfile(tmp): run(base_ + [fc % (gain, "")] + tail_, log)   # ffmpeg قديم (بدون latency): بدون حد، عشان ما يتأخر الصوت عن الصورة
+            for old in glob.glob(J(work, ".hs", "mic-*.wav")):
+                if os.path.basename(old) not in (os.path.basename(tmp), os.path.basename(out), os.path.basename(bal)):
+                    try: os.remove(old)
+                    except OSError: pass
+            os.replace(tmp, out)
+        finally:
+            for x in (raw, bal, envf, tmp):
+                try: os.remove(x)
+                except OSError: pass
+        sh = sum(b - a for a, b in Bt) / Dm if Dm else 0.0
+        info = {"sig": sig, "gain": round(gain, 1), "share": round(sh, 3), "at": int(time.time())}
+        wj(J(work, ".hs", "mic.json"), info)
+        if save:
+            st = load_studio(work); h = hs_of(st)
+            if h.get("angle"): h["angle"]["mic"] = {"on": True, "gain": info["gain"], "share": info["share"], "at": info["at"]}; wj(J(work, "studio.json"), st)
+        return {"ok": True, "file": out, **info}
+def _iv_minus(iv, cuts):
+    """[a,b] ناقص الفترات cuts."""
+    out = [iv]
+    for x, y in cuts:
+        nx = []
+        for a, b in out:
+            if y <= a or x >= b: nx.append((a, b)); continue
+            if x > a: nx.append((a, x))
+            if y < b: nx.append((y, b))
+        out = nx
+    return out
+def mic_set(work, on, log=print):
+    """يشغّل «صوت كل واحد من جواله» أو يطفيه. التشغيل يبنيه على طول، ولو ما قدر يرجع مطفي ويقول ليش."""
+    st = load_studio(work); h = hs_of(st)
+    if not h.get("angle") or not h["angle"].get("src"): return {"ok": False, "msg": "ما فيه زاوية ثانية. أضفها أول"}
+    if not on:
+        h["angle"]["mic"] = {"on": False}; wj(J(work, "studio.json"), st); return {"ok": True, "on": False}
+    h["angle"]["mic"] = {"on": True}; wj(J(work, "studio.json"), st)
+    try: r = mic_build(work, log, save=True)
+    except Exception as e: r = {"ok": False, "msg": str(e)[:200]}
+    if not r.get("ok"):
+        st = load_studio(work); h = hs_of(st)
+        if h.get("angle"): h["angle"]["mic"] = {"on": False}; wj(J(work, "studio.json"), st)
+        return {"ok": False, "msg": r.get("msg") or "ما قدرت", "gap": r.get("gap")}
+    r.pop("file", None); return {**r, "on": True}
+def angle_view(work):
+    hs = hs_of(load_studio(work)); A = angle_of(hs); meta = rj(J(work, ".hs", "angle.json"), {}) or {}
+    return {"ok": True, "src": A.get("src"), "off": A.get("off"), "score": A.get("score"), "manual": bool(A.get("manual")), "cover": A.get("cover"), "x": A["x"], "y": A["y"], "z": A["z"],
+            "n": len(angle_layers(hs)), "sig": meta.get("sig") or "", "busy": _ANG["busy"], "split": len([r for r in A.get("runs") or [] if r[2] is not None]) > 1, "spk": A.get("spk"), "mic": A.get("mic")}
+def cmd_angle(work, args):
+    """hs angle <work> status | add <ملف> [--no-auto] | auto [hold=4.5] | speaker [swap|noswap] [hold=1.5] | mic on|off | at <من> <إلى> | clear | sync [<ثواني>] | frame x=0.5 y=0.4 z=1 | build | remove"""
+    sub = args[0] if args else "status"; log = lambda m: print(m)
+    if sub == "status":
+        v = angle_view(work)
+        if not v["src"]: print("الزاوية الثانية: ما فيه. أضفها: hs angle <work> add <ملف>"); return
+        print("الزاوية الثانية: %s · التزامن %s ث%s · تغطي %s · %d تبديل · الإطار x=%s y=%s z=%s" % (v["src"], v["off"], (" (يدوي)" if v["manual"] else " (تطابق %d%%)" % int((v["score"] or 0) * 100)), ("%d%%" % int(v["cover"] * 100)) if v["cover"] is not None else "؟", v["n"], v["x"], v["y"], v["z"]))
+        if v.get("spk"): print("التبديل حسب المتكلم: فرق الصوت %s dB%s" % (v["spk"].get("gap"), " · مقلوب" if v["spk"].get("swap") else ""))
+        m_ = v.get("mic") or {}
+        print("صوت كل واحد من جواله: " + ("شغّال (الجوال الثاني %s dB، %d%% من المقطع)" % (("%+.1f" % m_["gain"]) if m_.get("gain") is not None else "؟", int((m_.get("share") or 0) * 100)) if m_.get("on") else "مطفي (الصوت كله من الجوال الأساسي)"))
+        return
+    if sub == "add":
+        if len(args) < 2: sys.exit("hs angle <work> add <ملف الزاوية الثانية>")
+        try: r = angle_add(work, args[1], log)
+        except ValueError as e: sys.exit(str(e))
+        if not r.get("ok"): sys.exit(r.get("msg") or "ما قدرت أجهّزها")
+        if "--no-auto" not in args and not angle_layers(hs_of(load_studio(work))): rs = angle_auto_best(work, log); print("تم: %d تبديل للزاوية الثانية" % len(rs))
+        print("تم: الزاوية الثانية متزامنة (%s ث) وجاهزة" % angle_of(hs_of(load_studio(work))).get("off")); return
+    if sub == "sync":
+        try: r = angle_resync(work, log, float(args[1]) if len(args) > 1 else None)
+        except ValueError as e: sys.exit(str(e))
+        print("تم" if r.get("ok") else r.get("msg")); return
+    if not angle_of(hs_of(load_studio(work))).get("src"): sys.exit("ما فيه زاوية ثانية. أضفها أول: hs angle <work> add <ملف>")
+    if sub == "auto":
+        kv = parse_kv(args[1:]); rs = angle_auto(work, kv.get("hold")); print("تم: %d تبديل (%s)" % (len(rs), " · ".join("%.1f-%.1f" % r for r in rs))); return
+    if sub == "speaker":   # 4.65: حسب المتكلم
+        kv = parse_kv(args[1:]); r = angle_speaker(work, True if "swap" in args[1:] else (False if "noswap" in args[1:] else None), kv.get("hold"))
+        if not r.get("ok"): sys.exit(r.get("msg") or "ما قدرت")
+        print("تم: %d تبديل حسب المتكلم (فرق الصوت %.1f dB · الزاوية الثانية %d%% من المقطع%s): %s" % (r["made"], r["gap"], int(r["share"] * 100), " · مقلوب" if r["swap"] else "", " · ".join("%.1f-%.1f" % x for x in r["rs"]))); return
+    if sub == "mic":   # 4.66: صوت كل واحد من جواله
+        on_ = (args[1] if len(args) > 1 else "on") not in ("off", "0", "no")
+        r = mic_set(work, on_, log)
+        if not r.get("ok"): sys.exit(r.get("msg") or "ما قدرت")
+        print("تم: صوت كل واحد من جواله (الجوال الثاني %+.1f dB، يتكلم %d%% من المقطع)" % (r["gain"], int(r["share"] * 100)) if on_ else "تم: الصوت كله من الجوال الأساسي"); return
+    if sub == "at":
+        try: a, b = float(args[1]), float(args[2])
+        except (IndexError, ValueError): sys.exit("hs angle <work> at <من> <إلى>")
+        if b - a < 0.3: sys.exit("المدة قصيرة")
+        st = load_studio(work); Ls = hs_of(st).setdefault("layers", []); Ls.append({"id": new_id(Ls), "type": "angle", "s": round(a, 3), "e": round(b, 3), "track": 0}); wj(J(work, "studio.json"), st)
+        print("تم: %.2f-%.2f بالزاوية الثانية" % (a, b)); return
+    if sub == "clear":
+        st = load_studio(work); hs = hs_of(st); hs["layers"] = [L for L in hs.get("layers") or [] if L.get("type") != "angle"]; wj(J(work, "studio.json"), st); print("تم: كله بالزاوية الأولى"); return
+    if sub == "frame":
+        kv = parse_kv(args[1:]); st = load_studio(work); A = hs_of(st)["angle"]
+        for k, lo, hi in (("x", 0, 1), ("y", 0, 1), ("z", 1, 3)):
+            if k in kv:
+                try: A[k] = round(max(lo, min(hi, float(kv[k]))), 3)
+                except (TypeError, ValueError): sys.exit("رقم")
+        wj(J(work, "studio.json"), st); r = angle_build(work, log); print("تم" if r.get("ok") else r.get("msg")); return
+    if sub == "build": r = angle_build(work, log, force=True); print("تم: %d فريم" % r["n"] if r.get("ok") else r.get("msg")); return
+    if sub == "remove":
+        st = load_studio(work); hs = hs_of(st); hs.pop("angle", None); hs["layers"] = [L for L in hs.get("layers") or [] if L.get("type") != "angle"]; wj(J(work, "studio.json"), st)
+        shutil.rmtree(J(work, "angle"), ignore_errors=True)
+        try: os.remove(J(work, ".hs", "angle.json"))
+        except OSError: pass
+        print("تم: انشالت الزاوية الثانية (ملفها باقي بمجلد المشروع)"); return
+    sys.exit(cmd_angle.__doc__)
 def kf_expr(K, key="g"):
     """4.56: مفاتيح مستوى الصوت ← تعبير ffmpeg (خطي بين كل مفتاحين، وقبل الأول وبعد الأخير ثابت)."""
     pts = sorted(((float(k["t"]), max(0.0, min(3.0, float(k.get(key, 1))))) for k in K or [] if isinstance(k, dict) and k.get("t") is not None), key=lambda x: x[0])
@@ -2987,22 +4559,33 @@ def encode(work, S, log, out_final, out_master, mix):
     caps = rj(J(work, "caps.json")); sfx = rj(J(work, "sfx.json"), {"outro": 0}) or {}
     dur = round(caps["total"] + sfx.get("outro", 0), 3); fade = round(dur - 0.6, 3)
     svf, svm = voice_track(work, mix, log)      # 4.12: صوت استوديو (يغني عن التنظيف العادي)
-    voice = float(mix.get("voice", 1)); chain = (CLEAN_AF if mix.get("clean") and not svf else "") + VOICE_FX.get(mix.get("voiceFx") or "", "") + "volume=%.3f," % voice + vr_filters(mix)
-    has_sfx = os.path.exists(J(work, "sfx.wav")); ins = ["-framerate", "30", "-i", J(work, "out", "%05d.jpg"), "-i", J(work, "cutz.mp4")] + (["-i", J(work, "sfx.wav")] if has_sfx else []) + (["-i", svf] if svf else [])
+    voice = float(mix.get("voice", 1)); chain = (CLEAN_AF if mix.get("clean") and (not svf or svm == "mic") else "") + VOICE_FX.get(mix.get("voiceFx") or "", "") + "volume=%.3f," % voice + vr_filters(mix)
+    hs_sp = hs_of(load_studio(work)); sp = speed_of(hs_sp)   # 4.59: سرعة المقطع (1 = نفس التصدير القديم بالضبط)
+    SG = speed_segs(hs_sp, dur) if speed_parts(hs_sp) else None   # 4.68: تسريع أجزاء: قطع بسرعات مختلفة (بدونها نفس الأمر القديم)
+    if SG:
+        dur0 = dur; dur = round(speed_map(SG, dur0), 3); fade = round(dur - 0.6, 3); sp = 1
+        log("تسريع %d جزء: المدة %.1f ث ← %.1f ث" % (len(speed_parts(hs_sp)), dur0, dur))
+    elif sp != 1: dur = round(dur / sp, 3); fade = round(dur - 0.6, 3); log("سرعة المقطع ×%g: المدة %.1f ث" % (sp, dur))
+    has_sfx = os.path.exists(J(work, "sfx.wav")); ins = ["-framerate", "30" if sp == 1 else "%.4f" % (30 * sp), "-i", J(work, "out", "%05d.jpg"), "-i", J(work, "cutz.mp4")] + (["-i", J(work, "sfx.wav")] if has_sfx else []) + (["-i", svf] if svf else [])
     bm, bp = bleep_filters(bleep_of(hs_of(load_studio(work)))); a0 = "a0"; ain = "[%d:a]" % (3 if has_sfx else 2) if svf else "[1:a]"
     g_sfx, bg_lv = voice_guard(work, mix, log, svf or J(work, "cutz.mp4"))
-    if svf: log("الصوت: " + {"ext": "اللي عالجته من برا", "dub": "الدبلجة", "local": "صوت استوديو"}.get(svm, "صوت استوديو"))
+    if svf: log("الصوت: " + {"ext": "اللي عالجته من برا", "dub": "الدبلجة", "local": "صوت استوديو", "mic": "كل واحد من جواله"}.get(svm, "صوت استوديو"))
     fc = "[0:v]scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[vo];%s%s%sapad=pad_dur=8[a0];" % (ain, chain, bm)
     if bp: fc += "%s[bp];[a0][bp]amix=inputs=2:duration=first:normalize=0[a0b];" % bp; a0 = "a0b"
     fc += ("[2:a]volume=%.4f[sx];[%s][sx]amix=inputs=2:duration=first:normalize=0[am];" % (g_sfx, a0) if has_sfx else "[%s]anull[am];" % a0)
-    fc += "[am]atrim=0:%s,asetpts=PTS-STARTPTS,afade=t=out:st=%s:d=0.6[ao]" % (dur, fade)
+    if SG:   # 4.68: كل قطعة لحالها (الصورة setpts والصوت atempo بنفس النبرة) وبعدين تنلصق، والصورة ترجع 30 فريم ثابتة
+        n_ = len(SG); fc = fc.replace("[0:v]scale=", "[0:v]setpts='%s/TB',fps=30,scale=" % speed_expr(SG), 1)
+        fc += "[am]asplit=%d%s;" % (n_, "".join("[as%d]" % i for i in range(n_))) + "".join(
+            "[as%d]atrim=start=%.4f%s,asetpts=PTS-STARTPTS%s[at%d];" % (i, a, (":end=%.4f" % b) if i < n_ - 1 else "", "".join("," + x for x in _atempo(r)), i) for i, (a, b, r) in enumerate(SG))
+        fc += "".join("[at%d]" % i for i in range(n_)) + "concat=n=%d:v=0:a=1,atrim=0:%s,asetpts=PTS-STARTPTS,afade=t=out:st=%s:d=0.6[ao]" % (n_, dur, fade)
+    else: fc += "[am]%satrim=0:%s,asetpts=PTS-STARTPTS,afade=t=out:st=%s:d=0.6[ao]" % ("" if sp == 1 else "atempo=%.4f," % sp, dur, fade)
     for f in (out_final, out_master):
         try: os.remove(f)
         except FileNotFoundError: pass
     log("تجميع…")
     run(["ffmpeg", "-v", "error", "-nostats"] + ins + ["-filter_complex", fc, "-map", "[vo]", "-map", "[ao]", "-c:v", "libx264", "-preset", "slow", "-crf", "18",
          "-maxrate", "10M", "-bufsize", "20M", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-color_range", "tv", "-colorspace", "bt709",
-         "-color_primaries", "bt709", "-color_trc", "bt709", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", "-y", out_final], log)
+         "-color_primaries", "bt709", "-color_trc", "bt709", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart"] + ([] if sp == 1 and not SG else ["-t", "%.3f" % dur]) + ["-y", out_final], log)
     log("معايرة الصوت…"); env = dict(os.environ); env["BG_GAIN"] = str(bg_lv); env["BG_FADE_IN"], env["BG_FADE_OUT"] = bg_fades(mix)
     try: master_audio(work, out_final, out_master, log, float(env["BG_GAIN"]), env["BG_FADE_IN"], env["BG_FADE_OUT"])   # 4.35: بدون bash
     except Exception as e: log("المعايرة ما اشتغلت (%s) — أسلّم الملف بلا معايرة" % str(e)[:160])
@@ -3087,13 +4670,14 @@ def srt_ts(t):
     if ms == 1000: s += 1; ms = 0
     return "%02d:%02d:%02d,%03d" % (h, m, s, ms)
 def make_srt(work, lang):
-    caps = rj(J(work, "caps.json")); cs = caps["cards"]; hs0 = load_studio(work).get("hs") or {}; mp = (hs0.get("en") or {}).get("map") or {}; out = []; n = 0; B = bleep_of(hs0)
+    caps = rj(J(work, "caps.json")); cs = caps["cards"]; hs0 = load_studio(work).get("hs") or {}; mp = (hs0.get("en") or {}).get("map") or {}; out = []; n = 0; B = bleep_of(hs0); sp = speed_of(hs0)
+    SG = speed_segs(hs0, caps.get("total") or 0) if speed_parts(hs0) else None; TM = (lambda x: speed_map(SG, x)) if SG else (lambda x: x / sp)
     for i, c in enumerate(cs):
         txt = bleep_card_text(c, B) if lang == "ar" else mp.get(card_key(c), "")
         if not txt: continue
         end = min(c["e"], cs[i + 1]["s"] - 0.02) if i + 1 < len(cs) else c["e"]
         if end <= c["s"]: end = c["s"] + 0.4
-        n += 1; out.append("%d\n%s --> %s\n%s\n" % (n, srt_ts(c["s"]), srt_ts(end), txt))
+        n += 1; out.append("%d\n%s --> %s\n%s\n" % (n, srt_ts(TM(c["s"])), srt_ts(TM(end)), txt))   # 4.59 · 4.68: على توقيت المقطع بعد السرعة وتسريع الأجزاء
     return "\n".join(out), n
 def pack(work):
     """حزمة النشر: الفيديو النهائي + SRT عربي/إنجليزي + نص الكلام + نص البوست، في ملف zip واحد."""
@@ -3405,9 +4989,9 @@ def video_add(work, item, at=None, dur=4.0, start=None, fit=None, log=None):
     with urllib.request.urlopen(urllib.request.Request(item["url"], headers=MEDIA_UA), timeout=180) as r, open(src, "wb") as f: shutil.copyfileobj(r, f)
     if os.path.getsize(src) < 20000: raise RuntimeError("المقطع ما نزل")
     total = float(item.get("dur") or 0); dur = max(1.0, min(float(dur or 4), 8.0)); st = float(start) if start not in (None, "") else (max(0.0, min(total * 0.25, total - dur)) if total else 0.0)
-    wide = (item.get("w") or 16) > (item.get("h") or 9) * 1.05; mode = fit or ("fit" if wide else "crop")
-    vf = ("fps=30,split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=28:4,eq=brightness=-0.18[bg];[b]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2" if mode == "fit"
-          else "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920")
+    cw_, ch_ = canvas_of(work); wide = (item.get("w") or 16) > (item.get("h") or 9) * 1.05; mode = fit or ("fit" if wide != (cw_ > ch_) else "crop")   # 4.60: يتبع شكل المشروع
+    vf = ("fps=30,split[a][b];[a]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=28:4,eq=brightness=-0.18[bg];[b]scale=%s[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2" % (cw_, ch_, cw_, ch_, ("%d:-2" % cw_) if ch_ > cw_ else ("-2:%d" % ch_)) if mode == "fit"
+          else "fps=30,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d" % (cw_, ch_, cw_, ch_))
     run(["ffmpeg", "-v", "error", "-ss", "%.2f" % st, "-t", "%.2f" % dur, "-i", src] + (["-filter_complex", vf] if mode == "fit" else ["-vf", vf]) + ["-q:v", "3", "-y", J(work, "broll", key + "_%04d.jpg")], log)
     n = len([f for f in os.listdir(J(work, "broll")) if f.startswith(key + "_")])
     if not n: raise RuntimeError("ما قدرت أقرأ المقطع")
@@ -3483,7 +5067,7 @@ def gen_import(work, rid, src, name=None, at=None, fit=None, log=print):
         lid = add_image_layer(work, "assets/" + fn, at, 3, fit); res = {"file": "assets/" + fn, "layer": lid}
     elif ext in VID_EXT:
         os.makedirs(J(work, "broll_src"), exist_ok=True); os.makedirs(J(work, "broll"), exist_ok=True); key = tag.replace("-", ""); dst = J(work, "broll_src", key + ext); shutil.copy(src, dst)
-        run(["ffmpeg", "-v", "error", "-i", dst, "-vf", "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", "-q:v", "3", "-y", J(work, "broll", key + "_%04d.jpg")], log)
+        run(["ffmpeg", "-v", "error", "-i", dst, "-vf", "fps=30,scale=%s:force_original_aspect_ratio=increase,crop=%s" % (cvs(work), cvs(work)), "-q:v", "3", "-y", J(work, "broll", key + "_%04d.jpg")], log)
         n = len([f for f in os.listdir(J(work, "broll")) if f.startswith(key + "_")])
         if not n: raise RuntimeError("ما قدرت أقرأ المقطع")
         st = load_studio(work); st.setdefault("brNeed", {})[key] = [1, n]; wj(J(work, "studio.json"), st)
@@ -3542,10 +5126,11 @@ def key_fit(work, key, log=lambda *a: None, refit=True):
             wh = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", src], capture_output=True, text=True, timeout=60).stdout.strip().split(",")
             ar = float(wh[0]) / float(wh[1])
         except Exception: ar = 9 / 16
-        if abs(ar - 9 / 16) > 0.03:
+        cw_, ch_ = canvas_of(work)
+        if abs(ar - cw_ / ch_) > 0.03:
             tmp = J(work, "broll", ".fit-" + key); shutil.rmtree(tmp, ignore_errors=True); os.makedirs(tmp)
             try:
-                run(["ffmpeg", "-v", "error", "-i", src, "-vf", "fps=30,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=0x%s" % col[1:], "-q:v", "3", "-y", J(tmp, key + "_%04d.jpg")], log)
+                run(["ffmpeg", "-v", "error", "-i", src, "-vf", "fps=30,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=0x%s" % (cw_, ch_, cw_, ch_, col[1:]), "-q:v", "3", "-y", J(tmp, key + "_%04d.jpg")], log)
                 new = sorted(os.listdir(tmp))
                 if new:
                     for f in fr: os.remove(f)
@@ -3585,6 +5170,31 @@ def cmd_key(work, args):
         if "y" in kv: b["ky"] = int(max(-1920, min(1920, float(kv["y"]))))
     wj(J(work, "studio.json"), st); print("تم: %d لقطة %s" % (len(idx), "رجعت عادية" if off else "تنشال خلفيتها"))
 
+# ── 4.62: قص بتقريب (Zoom cut / Punch-in cut): كل قصة تبدّل بين لقطة بعيدة وقريبة على الوجه، فالجمب كت يطلع كأنه كاميرتين.
+# الطبقة fx=cutzoom تقرّب الفيديو نفسه بس (الكابشن والنصوص بمكانها)، والتقريب حول الوجه وما يطلع أطراف سودا (الرسم بـ ext.js).
+def cutzoom_plan(work, caps, total, by="auto", gap=1.0):
+    """يرجع ([(s,e) القطع القريبة], طريقة الاختيار). القطع البعيدة والقريبة بالتناوب، أول قطعة بعيدة. ما فيه قطعة أقصر من gap ثانية."""
+    total = float(total or 0); gap = max(0.4, float(gap or 1.0))
+    if total <= 2 * gap: return [], by
+    seams = [s for s in keep_seams(work) if gap * 0.5 < s < total - gap * 0.5]
+    cards = (caps or {}).get("cards") or []; sent = []
+    for i, c in enumerate(cards):
+        if i == 0 or not c.get("w") or not cards[i - 1].get("w"): continue
+        prev = str(cards[i - 1]["w"][-1].get("t", "")).strip()
+        if re.search(r"[.!?؟…]$", prev) or float(c["s"]) - float(cards[i - 1]["e"]) > 0.35: sent.append(round(float(c["s"]), 3))
+    sent = [x for x in sent if gap * 0.5 < x < total - gap * 0.5]
+    if by not in ("cuts", "sentences"): by = "cuts" if len(seams) >= 3 else ("mixed" if seams else "sentences")
+    pts = sorted(set(seams if by == "cuts" else sent if by == "sentences" else seams + sent))
+    step = gap
+    if by != "cuts" and len(pts) < 2:   # تصوير بدون قص ولا سكتات واضحة: نبدّل عند بداية مقاطع الكابشن، كل 2.5 ثانية على الأقل
+        pts = sorted(set(pts + [round(float(c["s"]), 3) for c in cards if gap * 0.5 < float(c["s"]) < total - gap * 0.5])); step = max(gap, 2.5)
+    out = []; last = 0.0
+    for p in pts:
+        if p - last >= (gap if p in seams else step): out.append(round(p, 3)); last = p
+    while out and total - out[-1] < gap: out.pop()
+    ed = [0.0] + out + [round(total, 3)]
+    return [(ed[i], ed[i + 1]) for i in range(1, len(ed) - 1, 2)], by
+
 # ───────────────────────── إضافات تلقائية: تقريب عند الكلمات المميّزة · انتقال عند القصات ─────────────────────────
 def auto_layers(work, kind, on=True, opts=None):
     opts = opts or {}
@@ -3595,6 +5205,10 @@ def auto_layers(work, kind, on=True, opts=None):
             for w in c["w"]:
                 if w.get("hot") and w["s"] - last > 2.5 and w["s"] > 0.8 and not any(l.get("auto") == "zooms" and c["s"] <= l["s"] <= c["e"] for l in Ls):
                     Ls.append({"id": new_id(Ls), "type": "fx", "fx": "punch", "auto": "zooms", "s": round(max(0, w["s"] - 0.05), 3), "e": round(min(total, w["e"] + 0.55), 3), "amount": 0.5, "track": 2}); last = w["s"]; n += 1
+    if on and kind == "cutzooms":   # 4.62: قص بتقريب: لقطة بعيدة وقريبة بالتناوب على القصات (أو بداية الجمل لو التصوير بدون قص)
+        amt = max(0.1, min(1.0, float(opts.get("amount", 0.5) or 0.5)))
+        for a_, b_ in cutzoom_plan(work, caps, total, str(opts.get("by") or "auto"), float(opts.get("gap", 1.0) or 1.0))[0]:
+            Ls.append({"id": new_id(Ls), "type": "fx", "fx": "cutzoom", "auto": "cutzooms", "s": a_, "e": b_, "amount": round(amt, 2), "track": 2}); n += 1
     if on and kind == "transitions":
         typ = opts.get("type") or (hs.get("look") and (looks_all().get(hs["look"].get("name")) or {}).get("tr")) or "curve"; dr = opts.get("dir") or hs.get("trDir") or "right"
         cards = caps["cards"]; bounds = [c["s"] for i, c in enumerate(cards) if i == 0 or re.search(r"[.!?؟…]$", str(cards[i - 1]["w"][-1]["t"]).strip()) or c["s"] - cards[i - 1]["e"] > 0.45]
@@ -3994,8 +5608,8 @@ def flow_tips(work, ev, total, hs):
 def cmd_auto(work, args):
     kind = args[0] if args else "";
     if kind == "clear": kind = args[1]; print("انشالت."); auto_layers(work, kind, False); return
-    if kind not in ("zooms", "transitions", "beats"): sys.exit("auto: zooms | transitions [type=curve dir=right] | beats | clear zooms|transitions|beats")
-    print("انضاف %d %s" % (auto_layers(work, kind, True, parse_kv(args[1:])), {"zooms": "تقريب عند الكلمات المميّزة", "transitions": "انتقال عند تغيّر الفكرة", "beats": "ضربة على الإيقاع"}[kind]))
+    if kind not in ("zooms", "transitions", "beats", "cutzooms"): sys.exit("auto: zooms | transitions [type=curve dir=right] | beats | cutzooms [amount=0.5 by=auto|cuts|sentences gap=1.0] | clear zooms|transitions|beats|cutzooms")
+    print("انضاف %d %s" % (auto_layers(work, kind, True, parse_kv(args[1:])), {"zooms": "تقريب عند الكلمات المميّزة", "transitions": "انتقال عند تغيّر الفكرة", "beats": "ضربة على الإيقاع", "cutzooms": "لقطة قريبة (قص بتقريب: بعيدة وقريبة بالتناوب)"}[kind]))
 
 # ───────────────────────── الفحص الذاتي (3.1) ─────────────────────────
 MOJIBAKE = ("\ufffd", "\u00d8\u00a7", "\u00d9\u201e", "\u00d8\u00b9", "\u00c3\u02dc", "\u00e2\u20ac")
@@ -4729,7 +6343,7 @@ console.log(JSON.stringify({col,bg:A(2,2),red:A(25,50),black:A(25,80),edgeG:d[(5
         U = [-1, 0, 0.25, 0.5, 1, 1.3, 1.9, 2, 2.5, 2.999, 3, 9]
         jsv = None; m_ = re.search(r"/\*KF\{\*/(.*?)/\*\}KF\*/", ex_, re.S)
         if m_ and shutil.which("node"):
-            r_ = subprocess.run(["node", "-e", m_.group(1) + "\nconst K=" + json.dumps(K0) + ";console.log(JSON.stringify(" + json.dumps(U) + ".map(u=>kfVal(K,u))));const L={type:'text',s:2,e:6,kf:K};console.log(JSON.stringify([kfAt(L,3.25),kfAt({type:'image',fit:'cover',s:0,e:3,kf:K},1),kfAt({type:'text',s:0,e:3},1),kfPivot({type:'char'})]))"], capture_output=True, text=True, timeout=30)
+            r_ = subprocess.run(["node", "-e", "const CVW=1080,CVH=1920;\n" + m_.group(1) + "\nconst K=" + json.dumps(K0) + ";console.log(JSON.stringify(" + json.dumps(U) + ".map(u=>kfVal(K,u))));const L={type:'text',s:2,e:6,kf:K};console.log(JSON.stringify([kfAt(L,3.25),kfAt({type:'image',fit:'cover',s:0,e:3,kf:K},1),kfAt({type:'text',s:0,e:3},1),kfPivot({type:'char'})]))"], capture_output=True, text=True, timeout=30)
             if r_.returncode == 0: jsv = [json.loads(l) for l in r_.stdout.strip().split("\n")]
         pyv = [kf_val(K0, u) for u in U]
         same = jsv is not None and all(abs(a_[f] - b_[f]) < 1e-6 for a_, b_ in zip(jsv[0], pyv) for f in KF_DEF)
@@ -5003,6 +6617,559 @@ console.log(JSON.stringify({col,bg:A(2,2),red:A(25,50),black:A(25,80),edgeG:d[(5
             ok_ and 'id="bKf"' in sh_ and "function kfTool(" in ap_ and "function pendSync(" in ap_ and "pip_free" in open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(),
             "fast %.1fs at %s dur %s vol %s frames %s px %s dur %.2f vkf %s seams %s" % (fast_, R_["at"], R_["dur"], vol_, nf_, list(px_), dz_, VK_, SR_.get("seams")))
     except Exception as e: chk("4.56", False, str(e)[:240])
+    try:   # 4.57: موجة صوتك: الحساب من الصوت نفسه (ساكت ← منخفض، نغمة عميقة ← النطاقات العميقة، حادة ← الحادة)، الكاش، والأوامر والواجهة
+        td = tempfile.mkdtemp(prefix="hs-57-")
+        try:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=180x320:d=3:r=30", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=1", "-f", "lavfi", "-i", "sine=f=200:d=1:sample_rate=48000", "-f", "lavfi", "-i", "sine=f=3000:d=1:sample_rate=48000",
+                            "-filter_complex", "[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]", "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-t", "3", J(td, "cutz.mp4")], check=True, capture_output=True, timeout=60)
+            wj(J(td, "studio.json"), {"hs": {}}); off_ = wave_ensure(td) is None and not os.path.exists(J(td, "hs-wave.js"))
+            r1_ = wave_build(td); r2_ = wave_build(td)
+            o_ = json.loads(open(J(td, "hs-wave.js"), encoding="utf-8").read().split("=", 1)[1].rstrip().rstrip(";")); d_ = base64.b64decode(o_["d"]); st_ = o_["nb"] + 1
+            fr_ = lambda i: d_[i * st_:(i + 1) * st_]
+            sil_, low_, high_ = fr_(15), fr_(50), fr_(80)
+            CL_ = [[PY, os.path.abspath(__file__), "wave", td] + a_ for a_ in (["on"], ["style", "ring"], ["pos", "bottom"], ["color", "#ff0000"], ["size", "999"], ["style", "zigzag"])]
+            rc_ = [subprocess.run(c_, capture_output=True, text=True, encoding="utf-8", errors="replace").returncode for c_ in CL_]; W_ = wave_of(hs_of(load_studio(td)))
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ok_ = (off_ and r1_.get("ok") and r2_.get("cached") and abs(o_["n"] - 90) <= 2 and len(d_) == o_["n"] * st_ and sil_[0] < 30 and low_[0] > 150 and high_[0] > 150
+               and low_[1] > low_[-1] + 60 and high_[-1] > high_[1] + 60 and rc_ == [0, 0, 0, 0, 0, 1] and W_["on"] and W_["style"] == "ring" and W_["pos"] == "bottom" and W_["color"] == "#FF0000" and W_["size"] == 200)
+        ui_ = (all(x in ex_ for x in ("function waveDraw(t)", "'hs-wave.js'", "waveDraw(t); }catch(e)", "st==='ring'", "st==='dots'", "st==='line'")) and all(x in ap_ for x in ("function waveSec(h)", "o+=waveSec(h);", "api('/hs/wave',{})", "h.wave={on:false"))
+               and all(("%s:[" % k) in i18_ for k in ("wvT", "wvOn", "wvSub", "wvStyle", "wvBars", "wvLine", "wvDots", "wvRing", "wvPos", "wvY", "wvAbove", "wvBottom", "wvCenter", "wvTop", "wvWidth", "wvColor", "wvAuto", "wvHint", "wvFail"))
+               and all(x in me_ for x in ('if p == "/hs-wave.js":', 'if p == "/hs/wave":', 'elif cmd == "wave":', "    wave_ensure(work, log)   # 4.57")) and "hs wave" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.57: موجة صوتك (أعمدة، موجة، نقاط، دائرة) من صوت المقطع نفسه: الساكت منخفض، العميق والحاد بنطاقاتهم، الكاش، الأوامر والواجهة، والمطفي ما يحسب شي",
+            ok_ and ui_, "n %s sil %s low %s high %s rc %s W %s ui %s" % (o_.get("n"), list(sil_), list(low_), list(high_), rc_, W_, ui_))
+    except Exception as e: chk("4.57", False, str(e)[:240])
+    try:   # 4.58: الزاوية الثانية: التزامن من الصوت، الفريمات بنفس القص، زاوية بدأت متأخر، أصل فيه قطع، ملف ما يطابق، التوزيع، والأوامر والواجهة
+        import random as _rd, wave as _wv, struct as _st
+        def _speech(path, dur, shift, seed=7, noise=0.0):   # كلام صناعي: مقاطع عشوائية الطول والعلو، الوقت بالملف = وقت الأصل + shift
+            rnd = _rd.Random(seed); ev = []; t_ = -20.0
+            while t_ < 60:
+                d_ = rnd.uniform(0.08, 0.32); ev.append((t_, t_ + d_, rnd.uniform(0.2, 1.0), rnd.uniform(140, 320))); t_ += d_ + (rnd.uniform(0.25, 0.9) if rnd.random() < 0.18 else rnd.uniform(0.02, 0.08))
+            sr_ = 8000; out_ = bytearray(); nz_ = _rd.Random(seed + 1); j_ = 0
+            for i_ in range(int(dur * sr_)):
+                ts_ = i_ / sr_ - shift
+                while j_ < len(ev) and ev[j_][1] < ts_: j_ += 1
+                v_ = 0.0
+                if j_ < len(ev) and ev[j_][0] <= ts_ <= ev[j_][1]: v_ = ev[j_][2] * 0.5 * math.sin(2 * math.pi * ev[j_][3] * ts_) * math.sin(math.pi * (ts_ - ev[j_][0]) / (ev[j_][1] - ev[j_][0]))
+                v_ += noise * (nz_.random() * 2 - 1); out_ += _st.pack("<h", int(max(-1, min(1, v_)) * 30000))
+            w_ = _wv.open(path, "wb"); w_.setnchannels(1); w_.setsampwidth(2); w_.setframerate(sr_); w_.writeframes(bytes(out_)); w_.close()
+        def _mk(td_, name, dur, shift, size, fps, noise=0.0):   # الصورة تعلّم وقت الملف نفسه (السطوع = 40 + 12 × الثانية)
+            _speech(J(td_, name + ".wav"), dur, shift, noise=noise)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=%s:r=%d:d=%s,geq=lum='min(235,40+T*12)':cb=128:cr=128" % (size, fps, dur), "-i", J(td_, name + ".wav"),
+                            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", J(td_, name)], check=True, capture_output=True, timeout=60)
+        def _lum(f, ss=None):
+            return subprocess.run(["ffmpeg", "-v", "error"] + (["-ss", "%.3f" % ss] if ss is not None else []) + ["-i", f, "-frames:v", "1", "-vf", "scale=1:1,format=gray", "-f", "rawvideo", "-"], capture_output=True, timeout=30).stdout[0]
+        td = tempfile.mkdtemp(prefix="hs-58-"); td2 = tempfile.mkdtemp(prefix="hs-58b-"); qlog = lambda *a: None
+        try:
+            _mk(td, "src.mov", 12, 0, "180x320", 30); _mk(td, "cam2.mp4", 14, 1.23, "320x180", 25, 0.02); _mk(td, "late.mp4", 6, -5.0, "320x180", 25, 0.02)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=320x180:r=25:d=10", "-f", "lavfi", "-i", "sine=f=440:d=10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", J(td, "other.mp4")], check=True, capture_output=True, timeout=60)
+            keep_ = [[1.0, 4.0], [6.0, 9.5]]; wj(J(td, "cut.json"), {"keep": keep_}); os.makedirs(J(td, ".hs")); wj(media_path(td), {"keep": keep_})
+            fc_ = "[0:v]trim=1:4,setpts=PTS-STARTPTS[v0];[0:a]atrim=1:4,asetpts=PTS-STARTPTS[a0];[0:v]trim=6:9.5,setpts=PTS-STARTPTS[v1];[0:a]atrim=6:9.5,asetpts=PTS-STARTPTS[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(td, "src.mov"), "-filter_complex", fc_, "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", J(td, "cutz.mp4")], check=True, capture_output=True, timeout=60)
+            os.makedirs(J(td, "vfr")); subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(td, "cutz.mp4"), "-vf", "fps=30", "-q:v", "3", J(td, "vfr", "%05d.jpg")], check=True, capture_output=True, timeout=60)
+            nv_ = len(os.listdir(J(td, "vfr")))
+            wj(J(td, "caps.json"), {"total": 6.5, "cards": [{"s": round(i_ * 0.8, 2), "e": round(i_ * 0.8 + 0.75, 2), "w": [{"t": "x", "s": round(i_ * 0.8, 2), "e": round(i_ * 0.8 + 0.7, 2)}]} for i_ in range(8)]})
+            wj(J(td, "studio.json"), {"hs": {}}); none_ = angle_ensure(td) is None and not os.path.exists(J(td, "angle"))
+            angle_add(td, J(td, "cam2.mp4"), qlog); A1_ = angle_of(hs_of(load_studio(td)))
+            na_, napv_ = len(os.listdir(J(td, "angle"))), len(os.listdir(J(td, ".hs", "apv")))
+            fr1_ = [(_lum(J(td, "angle", "00031.jpg")), _lum(J(td, "cam2.mp4"), 2.0 + 1.23)), (_lum(J(td, "angle", "00121.jpg")), _lum(J(td, "cam2.mp4"), 7.0 + 1.23))]   # فريم من كل قطعة = نفس لحظته بالزاوية
+            cached_ = angle_build(td, qlog).get("cached")
+            rs_ = angle_auto(td, 1.5); cs_ = {c_["s"] for c_ in rj(J(td, "caps.json"))["cards"]}
+            auto_ok = bool(rs_) and all(a_ in cs_ and (b_ in cs_ or b_ == 6.5) and a_ >= 0.8 for a_, b_ in rs_) and len(angle_layers(hs_of(load_studio(td)))) == len(rs_)
+            CL_ = [[PY, os.path.abspath(__file__), "angle", td] + a_ for a_ in (["status"], ["at", "0.5", "1.5"], ["clear"], ["auto", "hold=1.5"], ["frame", "z=9"], ["at", "2", "2.1"], ["dance"])]
+            rc_ = [subprocess.run(c_, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300).returncode for c_ in CL_]; Az_ = angle_of(hs_of(load_studio(td)))
+            angle_add(td, J(td, "late.mp4"), qlog); A2_ = angle_of(hs_of(load_studio(td)))   # بدأت بعد الأصل بـ5 ثواني: تغطي القطعة الثانية بس
+            same_ = open(J(td, "angle", "00031.jpg"), "rb").read() == open(J(td, "vfr", "00031.jpg"), "rb").read()
+            fr2_ = (_lum(J(td, "angle", "00150.jpg")), _lum(J(td, "late.mp4"), 6.0 + (149 / 30.0 - 3.0) - 5.0))
+            rs2_ = angle_auto(td, 0.6); late_ok = bool(rs2_) and all(a_ >= 3.0 for a_, b_ in rs2_)
+            try: angle_add(td, J(td, "other.mp4"), qlog); bad_ = False
+            except ValueError: bad_ = True
+            shutil.copy(J(td, "cutz.mp4"), J(td2, "src-cutz.mp4")); shutil.copy(J(td, "cutz.mp4"), J(td2, "cutz.mp4")); shutil.copytree(J(td, "vfr"), J(td2, "vfr"))   # أصل فيه قطع (بدون src.mov)
+            wj(J(td2, "cut.json"), {"keep": [[0.0, 6.5]], "total": 6.5, "src": "cutz"}); wj(J(td2, "studio.json"), {"hs": {}})
+            angle_add(td2, J(td, "cam2.mp4"), qlog); A3_ = angle_of(hs_of(load_studio(td2))); R3_ = A3_["runs"]
+            fr3_ = [(_lum(J(td2, "angle", "00031.jpg")), fr1_[0][1]), (_lum(J(td2, "angle", "00121.jpg")), fr1_[1][1])]
+        finally: shutil.rmtree(td, ignore_errors=True); shutil.rmtree(td2, ignore_errors=True)
+        near = lambda P_: all(abs(int(a_) - int(b_)) <= 4 for a_, b_ in P_)
+        ok_ = (none_ and abs(A1_["off"] - 1.23) <= 0.02 and A1_["score"] > 0.8 and len(A1_["runs"]) == 1 and na_ == nv_ == napv_ and near(fr1_) and cached_ and auto_ok
+               and rc_ == [0, 0, 0, 0, 0, 1, 1] and Az_["z"] == 3.0 and abs(A2_["off"] + 5.0) <= 0.02 and 0.45 < (A2_.get("cover") or 0) < 0.65 and same_ and near([fr2_]) and late_ok and bad_
+               and len(R3_) == 2 and abs(R3_[0][2] - 2.23) <= 0.02 and abs(R3_[1][2] - 4.23) <= 0.02 and abs(R3_[0][1] - 3.0) <= 0.07 and near(fr3_))
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = (all(x in ex_ for x in ("const angAt=t=>", "a[0]=IM;", "if(main&&!AG){ try{ personPass", "FR.ang=rs[2]||null;", "window.__hsAngle=")) and all(x in ap_ for x in ("function angleSec(h)", "o+=angleSec(h);", "function angleHere()", "kind==='angle'", "L.type==='angle'?t('type_angle')"))
+               and all(("%s:[" % k) in i18_ for k in ("mcT", "mcSub", "mcUp", "mcSynced", "mcManual", "mcCover", "mcN", "mcAuto", "mcHere", "mcCtx", "mcClear", "mcFrame", "mcZoom", "mcApply", "mcOffT", "mcOffSet", "mcResync", "mcReplace", "mcRemove", "mcHint", "mcWorking", "mcReady", "mcFail", "mcLayerHint", "type_angle"))
+               and all(x in me_ for x in ('if p == "/hs/angle":', 'if p.startswith("/hs/apv/"):', 'elif cmd == "angle":', "    angle_ensure(work, log)   # 4.58")) and "hs angle" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.58: الزاوية الثانية (Multicam): تتزامن من الصوت لحالها، فريمها بنفس القص، تغطي جزء لو بدأت متأخر، الأصل اللي فيه قطع يلقى حدّه، الملف الغلط ينرفض، والتبديل على بداية الجمل",
+            ok_ and ui_, "off %s score %s runs %s frames %s/%s/%s lum %s cached %s auto %s rc %s z %s late %s cover %s same %s lum2 %s late_auto %s bad %s cutz %s lum3 %s ui %s" % (A1_.get("off"), A1_.get("score"), A1_.get("runs"), nv_, na_, napv_, fr1_, cached_, rs_, rc_, Az_.get("z"), A2_.get("off"), A2_.get("cover"), same_, fr2_, rs2_, bad_, R3_, fr3_, ui_))
+    except Exception as e: chk("4.58", False, str(e)[:240])
+    try:   # 4.59: سرعة المقطع: المدة تقصر والصوت بنفس نبرته (مو أحدّ)، والافتراضي نفس أمر التصدير القديم، وSRT بالتوقيت الجديد، والفحص يقترح السرعة اللي تدخّل المقطع
+        u_ = (speed_of({}) == 1.0 and speed_of({"speed": {"r": 1.2}}) == 1.2 and speed_of({"speed": {"r": "x"}}) == 1.0 and speed_of({"speed": {"r": 3}}) == SPEED_MAX
+              and speed_of({"speed": {"r": 0.5}}) == 1.0 and speed_need(160, 140) == 1.15 and speed_need(100, 140) is None and speed_need(300, 100) is None and speed_need(141, 140) == 1.01)
+        td = tempfile.mkdtemp(prefix="hs-speed-"); os.makedirs(J(td, "out"))
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=270x480:d=2:r=30", "-start_number", "1", "-q:v", "5", J(td, "out", "%05d.jpg")], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=270x480:d=2:r=30", "-f", "lavfi", "-i", "sine=frequency=300:duration=2:sample_rate=48000", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "-y", J(td, "cutz.mp4")], check=True)
+        wj(J(td, "caps.json"), {"total": 2.0, "cards": [{"s": 1.0, "e": 2.0, "w": [{"t": "تجربة", "s": 1.0, "e": 2.0}]}]}); wj(J(td, "sfx.json"), {"outro": 0})
+        def hz_(f):   # تردد النغمة من عدد مرات قطع الصفر (بدون numpy)
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-i", f, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"], capture_output=True, check=True).stdout
+            a = array.array("h"); a.frombytes(raw[:len(raw) // 2 * 2]); a = a[800:len(a) - 1600]
+            z = sum(1 for i in range(1, len(a)) if (a[i - 1] < 0) != (a[i] < 0)); return z / 2.0 / (len(a) / 8000.0) if len(a) else 0
+        cmds_ = []; run0_ = globals()["run"]
+        def run_rec(cmd, log, *a, **k): cmds_.append(list(cmd)); return run0_(cmd, log, *a, **k)
+        globals()["run"] = run_rec
+        try:
+            wj(J(td, "studio.json"), {"hs": {}}); encode(td, None, lambda *a: None, J(td, "f0.mp4"), J(td, "m0.mp4"), {})
+            c0_ = cmds_[-1]; d0_ = ffdur(J(td, "f0.mp4")); h0_ = hz_(J(td, "f0.mp4"))
+            wj(J(td, "studio.json"), {"hs": {"speed": {"r": 1.25}}}); encode(td, None, lambda *a: None, J(td, "f1.mp4"), J(td, "m1.mp4"), {})
+            c1_ = cmds_[-1]; d1_ = ffdur(J(td, "f1.mp4")); h1_ = hz_(J(td, "f1.mp4"))
+        finally: globals()["run"] = run0_
+        same_ = c0_[c0_.index("-framerate") + 1] == "30" and "atempo" not in " ".join(c0_) and "-t" not in c0_ and c1_[c1_.index("-framerate") + 1] == "37.5000" and "atempo=1.2500" in " ".join(c1_)
+        srt_ = make_srt(td, "ar")[0]
+        import io, contextlib
+        wj(J(td, "caps.json"), {"total": 160.0, "cards": []}); buf_ = io.StringIO()
+        with contextlib.redirect_stdout(buf_): cmd_speed(td, ["fit", "x"])
+        fit_ = (rj(J(td, "studio.json")) or {}).get("hs", {}).get("speed") == {"r": 1.15}
+        with contextlib.redirect_stdout(io.StringIO()): cmd_speed(td, ["off"])
+        off_ = "speed" not in ((rj(J(td, "studio.json")) or {}).get("hs") or {})
+        shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = (all(x in ap_ for x in ("function speedSec(h)", "+speedSec(h)+", "if(!(SPACE&&SPACE.held)) RATE=spBase();", "setRate(spBase())", "closest('[data-speed]')", "t('chkLenFit',l.fit)", "c.out||c.total"))
+               and all(("%s:[" % k) in i18_ for k in ("spT", "spSub", "spNorm", "spLen", "spFit", "spHint", "spDone", "spOff", "chkLenFit", "chkLenSp"))
+               and 'elif cmd == "speed":' in me_ and '"len": ln_, "speed": sp_' in me_ and "hs speed" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.59: سرعة المقطع: ×1.25 يقصّر المدة وصوتك بنفس نبرته، الافتراضي نفس أمر التصدير القديم، SRT بالتوقيت الجديد، و«دخّله بحد المنصة» يحسب السرعة",
+            u_ and abs(d0_ - 2.0) < 0.06 and abs(d1_ - 1.6) < 0.06 and abs(h0_ - 300) < 12 and abs(h1_ - 300) < 12 and same_ and "00:00:00,800 --> 00:00:01,600" in srt_ and fit_ and off_ and ui_,
+            "unit %s dur %.2f/%.2f hz %.0f/%.0f same %s srt %s fit %s off %s ui %s" % (u_, d0_, d1_, h0_, h1_, same_, srt_[:40].replace("\n", " "), fit_, off_, ui_))
+    except Exception as e: chk("4.59", False, str(e)[:240])
+    try:   # 4.60: المشروع العرضي (يوتيوب) وتحديد أكثر من عنصر
+        td = tempfile.mkdtemp(prefix="hs-cv-"); wj(J(td, "studio.json"), {"hs": {"vpos": {"y": 0.2}, "cap": {"width": 760}, "fix": {"erase": [{"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.1}], "skin": "light"}}})
+        canvas_set(td, "16:9"); h1_ = hs_of(load_studio(td))
+        land_ = canvas_of(td) == (1920, 1080) and cvs(td) == "1920:1080" and h1_["cap"]["width"] == 1500 and h1_["frame"]["ar"] == "16:9" and "vpos" not in h1_ and h1_["fix"] == {"skin": "light"}
+        canvas_set(td, "9:16"); h2_ = hs_of(load_studio(td))
+        back_ = canvas_of(td) == (1080, 1920) and "canvas" not in h2_ and "width" not in h2_["cap"] and h2_["frame"]["ar"] == "9:16"
+        shutil.rmtree(td, ignore_errors=True)
+        ref_ = open(os.path.join(HERE, "engine", "scripts", "compose.REFERENCE.html"), encoding="utf-8").read()
+        v_ = compose_canvas(ref_, 1080, 1920); l_ = compose_canvas(v_, 1920, 1080)
+        comp_ = (v_ == ref_ and compose_canvas(l_, 1080, 1920) == v_ and "const W=1920,H=1080;" in l_ and 'width="1920" height="1080"' in l_)
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); hb_ = open(os.path.join(HERE, "hub.html"), encoding="utf-8").read()
+        ui_ = (all(x in ap_ for x in ("let MSEL=[]", "function msDelete(", "function msPanel(", "kind:'box'", "kind:'multi'", "function cvSet(){", "o+=canvasSec();", "srcBy='me'")) and 'elif cmd == "canvas":' in open(os.path.abspath(__file__), encoding="utf-8").read()
+               and "window.__hsCanvas=[CVW,CVH];" in ex_ and "data-ncv" in hb_ and "canvas:NW.cv" in hb_
+               and all(("%s:[" % k) in i18_ for k in ("msTitle", "msDel", "msCapsQ", "cvTitle", "cvAsk", "cvL", "pvFromMe", "pvAttached")))
+        chk("4.60: المشروع العرضي 1920×1080 (يتحوّل ويرجع عمودي سليم، صفحة الرسم تتبدّل وترجع نفسها)، وتحديد أكثر من عنصر بالتايم لاين",
+            land_ and back_ and comp_ and ui_, "land %s back %s compose %s ui %s" % (land_, back_, comp_, ui_))
+    except Exception as e: chk("4.60", False, str(e)[:240])
+    try:   # 4.61: ربط Codex من الإعدادات
+        td = tempfile.mkdtemp(prefix="hs-cx-"); old_ = os.environ.get("CODEX_HOME"); os.environ["CODEX_HOME"] = td
+        try:
+            ok1_ = codex_skill_sync(mark=False)[0]; ok2_ = codex_skill_sync(mark=False)[0]; d_ = codex_skill_dir(); sk_ = open(J(d_, "SKILL.md"), encoding="utf-8").read()
+            cp_ = (ok1_ and ok2_ and sk_.startswith("---\nname:") and "شغّال من Codex" in sk_ and os.path.isfile(J(d_, "hs.py")) and os.path.isfile(J(d_, "agents", "openai.yaml"))
+                   and open(J(d_, "VERSION"), encoding="utf-8").read().strip() == VERSION and not any(os.path.exists(J(d_, x)) for x in ("skills", "_backup", "hooks", "videos"))
+                   and len(glob.glob(J(td, "hs-backup", "codex-skill-*"))) == 1 and codex_skill_state()["fresh"])
+        finally:
+            if old_ is None: os.environ.pop("CODEX_HOME", None)
+            else: os.environ["CODEX_HOME"] = old_
+            shutil.rmtree(td, ignore_errors=True)
+        av_ = codex_exec_argv("codex", os.path.abspath(os.sep + "w"), [HERE], js=True)
+        arg_ = av_[:2] == ["codex", "exec"] and "--skip-git-repo-check" in av_ and av_[av_.index("-s") + 1] == "workspace-write" and "--json" in av_ and av_[-1] == "-" and "approval_policy=never" in av_
+        why_ = codex_why("Error: Not logged in. Run codex login")["why"] == "login" and "Codex" in codex_why("You've hit your usage limit")["msg"]
+        hb_ = open(J(HERE, "hub.html"), encoding="utf-8").read(); ap_ = open(J(HERE, "app.js"), encoding="utf-8").read()
+        ui_ = (all(x in hb_ for x in ("function cxCard(", "data-cxlink", "data-agent=", "'codex_test'", "cxT:[", "function agPick(", "agView()==='codex'?cxCard():clCard()")) and "const agN=" in ap_ and "Claude(?! Code| in Chrome)" in ap_
+               and 'if kind == "codex": return agent_run_codex(' in open(os.path.abspath(__file__), encoding="utf-8").read())
+        chk("4.61: ربط Codex (السكل ينسخ لـ Codex بملاحظته والقديم ينحفظ، أمر codex exec صحيح، وكرت الإعدادات)", cp_ and arg_ and why_ and ui_, "copy %s argv %s why %s ui %s" % (cp_, arg_, why_, ui_))
+    except Exception as e: chk("4.61", False, str(e)[:240])
+    try:   # 4.70: السبورة
+        td = tempfile.mkdtemp(prefix="hs-bd-"); wj(J(td, "studio.json"), {"hs": {"cap": {"on": True, "y": 76}}})
+        good_ = {"id": "b1", "s": 1, "e": 8, "mode": "full", "bg": "chalk", "scenes": [{"at": 0, "items": [{"k": "text", "t": "النسبية", "x": 0.5, "y": 0.2, "size": 9}, {"k": "char", "who": "juice", "x": 0.3, "y": 0.5, "size": 22}]},
+                 {"at": 3.5, "items": [{"k": "axes", "x": 0.5, "y": 0.45, "w": 0.6, "h": 0.4, "xl": "المكان", "yl": "الوقت"}, {"k": "icon", "name": "clock", "x": 0.8, "y": 0.2}]}]}
+        e1_, w1_ = bd_check(td, good_, 30)
+        bad_ = {"id": "b2", "s": 1, "e": 6, "mode": "full", "scenes": [{"at": 0, "items": [{"k": "text", "t": "عنوان", "x": 0.5, "y": 0.3, "size": 9}, {"k": "text", "t": "عنوان ثاني", "x": 0.5, "y": 0.31, "size": 9},
+                 {"k": "icon", "name": "nope"}, {"k": "photo", "src": "assets/x.jpg"}, {"k": "text", "t": "فوق الكابشن", "x": 0.5, "y": 0.75, "size": 6}]}]}
+        e2_, w2_ = bd_check(td, bad_, 30)
+        shutil.rmtree(td, ignore_errors=True)
+        chk_ = (not e1_ and not w1_ and any("nope" in m for m in e2_) and any("x.jpg" in m for m in e2_) and any("يغطي" in m for m in w2_) and any("الكابشن" in m for m in w2_))
+        ex_ = open(J(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(J(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(J(HERE, "i18n.js"), encoding="utf-8").read()
+        voc_ = bd_vocab(); ui_ = (all(x in ex_ for x in ("function boards(t)", "['board',x=>", "L.type==='board'?{s:L.s,e:L.e,m:bdRectFor(L),nocap:true}", "function bdChar(", "function bdGlass("))
+               and all(x in ap_ for x in ("function boardPanel(", "data-add=\"board:", "data-bdask")) and all(("%s:[" % k) in i18_ for k in ("type_board", "binBoard", "bdAsk", "bdm_top"))
+               and {"question", "clock", "bulb"} <= voc_["icons"] and {"kid", "man"} <= voc_["people"] and {"juice", "sun"} <= voc_["things"]
+               and os.path.isfile(os.path.join(find_engine(None) or J(HERE, "engine"), "references", "board.md")))
+        chk("4.70: السبورة (الفحص يقبل السليمة ويمسك: أيقونة غلط، صورة ناقصة، نص فوق نص، نص فوق الكابشن)، والمحرّك والواجهة والمرجع", chk_ and ui_, "check %s ui %s · %s | %s" % (chk_, ui_, e1_ + w1_, (e2_ + w2_)[:4]))
+    except Exception as e: chk("4.70", False, str(e)[:240])
+    try:   # 4.70: التفريغ حرفي، والإعادة الأنظف، والتلعثم ما يقص كلمة كاملة
+        sys.path.insert(0, os.path.join(find_engine(None) or J(HERE, "engine"), "scripts")); import takes as tk_, capgroup as cg_
+        W_ = lambda t, s, p=0.9: {"t": t, "s": s, "e": s + 0.3, "p": p}
+        st1_ = tk_.stutters([W_("كل", 0), W_("كلمة", 0.35), W_("مهمة", 0.7)]); st2_ = tk_.stutters([W_("من", 0), W_("منا", 0.35)])
+        st3_ = [x["text"] for x in tk_.stutters([W_("ك", 0, 0.3), W_("كلمة", 0.6), W_("مهمة", 0.95)])]
+        me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); bad_names_ = [k for k in ("سلة", "زد", "ابل", "اكسل") if k in cg_.NAMES]
+        ok_ = (st1_ == [] and st2_ == [] and st3_ == ["ك"] and not bad_names_ and "+ WHISPER_SAFE" in me_ and '"--hallucination_silence_threshold", "2"' in me_
+               and "if latin or (lo and close):" in me_ and "لا تبدّل كلمة بمرادفها" in me_ and 'a_ - segs[t0]["start"] <= 6:' in me_)
+        cl_ = [W_("هذي", 0), W_("أفضل", 0.35), W_("طريقة", 0.7), W_("للمونتاج", 1.05)]; ms_ = [W_("هذي", 3), W_("امم", 3.35), W_("أفضل", 3.7), W_("طريقة", 4.05), W_("طريقة", 4.6), W_("للمونتاج", 4.95)]
+        bt_ = tk_.best_take([{"n": 4, "p": 0.9, "_w": cl_}, {"n": 6, "p": 0.9, "_w": ms_}])
+        e3_, _ = bd_check(J(HERE), {"id": "x", "s": 0, "e": 5, "scenes": [{"at": 0, "items": [{"k": "arrow", "pts": [[0.5, 0.5]]}, {"k": "text", "t": "ا", "x": None, "at": "1s"}]}]}, 30)
+        e4_, _ = bd_check(J(HERE), {"id": "y", "s": 0, "e": 5, "scenes": [{"at": 0, "items": {"k": "text"}}]}, 30)
+        ok_ = ok_ and bt_ == 0 and any("pts" in m for m in e3_) and any("أرقام" in m for m in e3_) and any("items" in m for m in e4_)
+        chk("4.70: التفريغ بدون تكرار ولا اختراع على السكتات، القاموس ما يحوّل اللهجة، «كل كلمة» ما تنقص، والإعادة الأنظف تفوز على اللي فيها «امم» وتكرار، وفحص السبورة ما يطيح على قيم غلط", ok_, "%s %s %s %s best %s %s %s" % (st1_, st2_, st3_, bad_names_, bt_, e3_[:2], e4_[:1]))
+    except Exception as e: chk("4.70 التفريغ", False, str(e)[:240])
+    try:   # 4.62: قص بتقريب (Zoom cut)
+        td = tempfile.mkdtemp(prefix="hs-cz-")
+        try:
+            wj(J(td, "studio.json"), {"hs": {"layers": [{"id": "L1", "type": "text", "s": 1, "e": 2, "text": "x"}]}})
+            wj(J(td, "cut.json"), {"keep": [[0, 3], [4, 6], [7, 10], [11, 15], [16, 20]], "total": 16})
+            wd_ = lambda w: {"t": w, "s": 0, "e": 0}
+            wj(J(td, "caps.json"), {"total": 16, "cards": [{"s": 0, "e": 2.9, "w": [wd_("هلا")]}, {"s": 3.0, "e": 15.8, "w": [wd_("والله")]}]})
+            n1_ = auto_layers(td, "cutzooms", True); n2_ = auto_layers(td, "cutzooms", True, {"amount": 0.8})
+            Z_ = [l for l in hs_of(load_studio(td))["layers"] if l.get("auto") == "cutzooms"]
+            cuts_ = (n1_ == 2 and n2_ == 2 and [(l["s"], l["e"]) for l in Z_] == [(3.0, 5.0), (8.0, 12.0)] and all(l["fx"] == "cutzoom" and l["amount"] == 0.8 for l in Z_)
+                     and any(l.get("id") == "L1" for l in hs_of(load_studio(td))["layers"]))
+            auto_layers(td, "cutzooms", False); clr_ = not any(l.get("auto") == "cutzooms" for l in hs_of(load_studio(td))["layers"])
+            wj(J(td, "cut.json"), {"keep": [[0, 12]], "total": 12})
+            caps_ = {"total": 12, "cards": [{"s": 0.1, "e": 2.0, "w": [wd_("مرحبا؟")]}, {"s": 2.1, "e": 3.0, "w": [wd_("كيف")]}, {"s": 3.05, "e": 5.9, "w": [wd_("حالك")]},
+                                            {"s": 6.5, "e": 8.0, "w": [wd_("اليوم")]}, {"s": 8.05, "e": 8.6, "w": [wd_("نبدأ.")]}, {"s": 8.7, "e": 11.8, "w": [wd_("خلاص")]}]}
+            pl_, by_ = cutzoom_plan(td, caps_, 12)
+            sen_ = by_ == "sentences" and pl_ == [(2.1, 6.5), (8.7, 12.0)]
+            short_ = cutzoom_plan(td, caps_, 1.5)[0] == [] and cutzoom_plan(td, caps_, 12, "sentences", 3.0)[0] == [(6.5, 12.0)]
+            flat_ = {"total": 12, "cards": [{"s": 1.5 * i, "e": 1.5 * i + 1.48, "w": [wd_("كلمة")]} for i in range(8)]}
+            sen_ = sen_ and cutzoom_plan(td, flat_, 12)[0] == [(3.0, 6.0), (9.0, 12.0)]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(J(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(J(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(J(HERE, "i18n.js"), encoding="utf-8").read(); sh_ = open(J(HERE, "studio.html"), encoding="utf-8").read()
+        ui_ = ("if(main&&!AG) czCrop(a,sw,shh);" in ex_ and ex_.index("czCrop(a,sw,shh);   /*") < ex_.index("const u=main?a.slice():null;") and "L.fx!=='cutzoom'&&!L.off" in ex_ and "window.__hsCutZoom=" in ex_
+               and "'facezoom','cutzoom','spotlight'" in ap_ and 'data-auto="cutzooms"' in ap_ and ".fxp-cutzoom{" in sh_ and all(("%s:[" % k) in i18_ for k in ("fx_cutzoom", "autoCutZooms", "autoCutZoomsHint")))
+        chk("4.62: قص بتقريب (بعيدة وقريبة بالتناوب على القصات، أو بداية الجمل لو ما فيه قص، بدون قطع قصيرة، وتنشال كاملة)، والتقريب على الفيديو بس",
+            cuts_ and clr_ and sen_ and short_ and ui_, "cuts %s clear %s sentences %s %s short %s ui %s" % (cuts_, clr_, sen_, pl_, short_, ui_))
+    except Exception as e: chk("4.62", False, str(e)[:240])
+    try:   # 4.63: الفيديو داخل الكلمة (Text mask)
+        td = tempfile.mkdtemp(prefix="hs-mk-")
+        try:
+            import contextlib, io
+            wj(J(td, "studio.json"), {"hs": {"layers": []}})
+            with contextlib.redirect_stdout(io.StringIO()): cmd_layer(td, ["add", "type=mg", "kind=mask", "text=الفكرة", "s=1"])
+            M_ = hs_of(load_studio(td))["layers"][-1]
+            cli_ = (M_["kind"] == "mask" and M_["style"] == "in" and abs(M_["e"] - 3.4) < 1e-6 and M_["bg"] == "#F5F5F3" and M_["track"] == 1)
+            bad_ = 0
+            for a_ in (["style=zoom", "text=x"], ["text=أ\\nب\\nج"], ["text= "], ["text=x", "s=1", "e=1.3"]):
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()): cmd_layer(td, ["add", "type=mg", "kind=mask"] + a_)
+                except SystemExit: bad_ += 1
+            cli_ = cli_ and bad_ == 4 and len(hs_of(load_studio(td))["layers"]) == 1
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(J(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(J(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(J(HERE, "i18n.js"), encoding="utf-8").read()
+        jm = None; m_ = re.search(r"/\*MASKK\*/(.*?)/\*MASKK-END\*/", ex_, re.S)
+        if m_ and shutil.which("node"):
+            r_ = subprocess.run(["node", "-e", m_.group(1) + """
+const D=2.4, K=(s,t)=>maskK(s,t,D), w=40, h=20, G=new Uint8Array(w*h); for(let y=4;y<16;y++) for(let x=3;x<15;x++) G[y*w+x]=1; for(let x=18;x<39;x++) G[10*w+x]=1;
+let jump=0, p=K('in',0); for(let i=1;i<=240;i++){ const q=K('in',i*D/240); jump=Math.max(jump,Math.abs(q.a-p.a),Math.abs(q.h-p.h),Math.abs(Math.log(q.z)-Math.log(p.z))); p=q; }
+console.log(JSON.stringify({i0:K('in',0),i1:K('in',1.0),i2:K('in',2.0),i3:K('in',D),o0:K('out',0),o3:K('out',D),h1:K('hold',1.2),h3:K('hold',D),jump,core:maskCore(G,w,h,30,10),none:maskCore(new Uint8Array(w*h),w,h,20,10)}));"""], capture_output=True, text=True, timeout=60)
+            if r_.returncode == 0: jm = json.loads(r_.stdout.strip())
+        okj = (jm is not None and jm["i0"]["h"] == 1 and jm["i0"]["a"] == 1 and 0.9 < jm["i0"]["z"] < 0.95 and jm["i1"]["h"] == 1 and jm["i1"]["a"] == 1 and jm["i1"]["z"] < 1.06
+               and jm["i2"]["z"] > 1.5 and jm["i3"]["a"] < 1e-9 and jm["i3"]["z"] > 40 and jm["o0"]["a"] < 1e-9 and jm["o3"]["h"] == 0 and jm["o3"]["a"] == 1 and abs(jm["o3"]["z"] - 0.92) < 1e-9 and jm["o0"]["h"] == 1
+               and jm["h1"]["a"] == 1 and jm["h1"]["h"] == 1 and jm["h3"]["a"] < 1e-9 and jm["jump"] < 0.35 and jm["core"] is not None and 3 <= jm["core"][0] < 15 and 4 <= jm["core"][1] < 16 and jm["none"] is None)
+        ui_ = ("MGK.mask=" in ex_ and "window.drawVideo=function(t){ const r=_dvM.apply(this,arguments); const L=maskAt(t);" in ex_ and "L.kind==='mask'?L.nocap!==false:L.nocap" in ex_ and "'destination-out'" in ex_
+               and "'freeze','mask'" in ap_ and "mask:2.4" in ap_ and "function maskHere()" in ap_ and "msk={l:t('ctxMask'),f:maskHere}" in ap_ and "else if(k==='mask')" in ap_ and "mask:{text:'IDEA'}" in ap_
+               and all(("%s:[" % k) in i18_ for k in ("mg_mask", "ctxMask", "maskAdded", "maskEnd", "mkHint", "mkStyle", "mk_in", "mk_out", "mk_hold", "mkH_in", "mkH_out", "mkH_hold", "mkLine", "mkCap"))
+               and "kind=mask" in open(J(HERE, "SKILL.md"), encoding="utf-8").read() and "mask" in MG_ALL)
+        chk("4.63: الفيديو داخل الكلمة (افتتاحية تدخل من أعرض نقطة بالحرف، ختام يتسكّر على اللون، ثابتة)، بالطرفية والاستوديو وكليك يمين، والكابشن يختفي معها",
+            cli_ and okj and ui_, "cli %s js %s ui %s" % (cli_, jm, ui_))
+    except Exception as e: chk("4.63", False, str(e)[:240])
+    try:   # 4.64: تصحيح الألوان التلقائي
+        td = tempfile.mkdtemp(prefix="hs-cc-")
+        try:
+            import contextlib, io
+            os.makedirs(J(td, "vfr"))
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x4A3A22:s=180x320:d=1:r=30", "-f", "lavfi", "-i", "color=c=0x5C564A:s=90x120:d=1:r=30",
+                            "-filter_complex", "[0][1]overlay=0:200", "-q:v", "2", "-start_number", "1", J(td, "vfr", "%05d.jpg")], capture_output=True)   # لقطة معتمة وصفراء
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x777777:s=180x320:d=1:r=30", "-f", "lavfi", "-i", "color=c=0x2060C0:s=120x120:d=1:r=30", "-f", "lavfi", "-i", "color=c=0x101010:s=180x30:d=1:r=30", "-f", "lavfi", "-i", "color=c=0xF0F0F0:s=180x30:d=1:r=30",
+                            "-filter_complex", "[0][1]overlay=20:20[a];[a][2]overlay=0:0[b];[b][3]overlay=0:290", "-q:v", "2", "-start_number", "31", J(td, "vfr", "%05d.jpg")], capture_output=True)   # لقطة سليمة
+            wj(J(td, "cut.json"), {"keep": [[0, 1], [2, 3]], "total": 2.0}); wj(J(td, "caps.json"), {"total": 2.0, "cards": []}); wj(J(td, "studio.json"), {"hs": {}})
+            bd_ = cc_bounds(td); is0_ = color_issues(td)
+            with contextlib.redirect_stdout(io.StringIO()): cmd_color(td, ["auto"])
+            H_ = hs_of(load_studio(td)); L_ = H_.get("ccs") or []
+            c0, c1 = (L_ + [{}, {}])[:2]
+            meas_ = (len(L_) == 2 and bd_ == [0.0, 1.0, 2.0] and "dark" in c0.get("codes", []) and "warm" in c0.get("codes", []) and c0["b"] > 1.2 and c0["g"][2] > c0["g"][0] + 0.05
+                     and not [x for x in c1.get("codes", []) if x != "match"] and abs(c1["b"] - 1) < 0.06 and max(abs(v - 1) for v in c1["g"]) < 0.03 and H_.get("cc") == {"on": True, "amount": 1.0})
+            iss_ = (is0_ is not None and [x["i"] for x in is0_["clips"]] == [0] and color_issues(td) is None)
+            bad_ = 0
+            for a_ in (["amount", "x"], ["nope"]):
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()): cmd_color(td, a_)
+                except SystemExit: bad_ += 1
+            with contextlib.redirect_stdout(io.StringIO()): cmd_color(td, ["amount", "60"]); cmd_color(td, ["off"])
+            H2_ = hs_of(load_studio(td)); off_ = H2_["cc"] == {"on": False, "amount": 0.6} and color_issues(td) is not None
+            with contextlib.redirect_stdout(io.StringIO()): cmd_color(td, ["clear"])
+            cli_ = bad_ == 2 and off_ and "cc" not in hs_of(load_studio(td)) and "ccs" not in hs_of(load_studio(td))
+            ins_ = _ins_split([{"s": 0.0, "e": 4.0, "b": 1.2}], 2.0, 1.0) == [{"s": 0.0, "e": 2.0, "b": 1.2}, {"s": 3.0, "e": 4.0, "b": 1.2}]
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(J(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(J(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(J(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        jc = None; m_ = re.search(r"/\*CCK\*/(.*?)/\*CCK-END\*/", ex_, re.S)
+        if m_ and shutil.which("node"):
+            r_ = subprocess.run(["node", "-e", "const cl=(v,a,b)=>Math.max(a,Math.min(b,v)), VEND=10; let HSX={};" + m_.group(1) + """
+const E={s:0,e:2,b:1.3,c:1.1,sat:1.05,g:[0.9,1.0,1.2],ang:{b:0.9,c:1,sat:1,g:[1,1,1]}}; const R={};
+HSX={cc:{on:true,amount:1},ccs:[E]}; R.full=ccAt(1,false); R.ang=ccAt(1,true); R.out=ccAt(3,false); R.end=ccAt(12,false);
+HSX.cc.amount=0.5; R.half=ccAt(1,false); HSX.cc.amount=0; R.zero=ccAt(1,false); HSX.cc={on:false,amount:1}; R.off=ccAt(1,false); HSX={ccs:[E]}; R.none=ccAt(1,false);
+R.f1=ccF(null,null); R.f2=ccF({f:'brightness(1)'},{f:'saturate(2)'}); console.log(JSON.stringify(R));"""], capture_output=True, text=True, timeout=60)
+            if r_.returncode == 0: jc = json.loads(r_.stdout.strip())
+        okj = (jc is not None and jc["full"]["f"] == "brightness(1.560) contrast(1.100) saturate(1.050)" and jc["full"]["mul"] == "rgb(191,213,255)" and jc["ang"]["f"] == "brightness(0.900) contrast(1.000) saturate(1.000)"
+               and jc["ang"]["mul"] is None and jc["out"] is None and jc["end"] is None and jc["half"]["f"] == "brightness(1.265) contrast(1.050) saturate(1.025)" and jc["zero"] is None and jc["off"] is None and jc["none"] is None
+               and jc["f1"] == "none" and jc["f2"] == "brightness(1) saturate(2)")
+        ui_ = ("const G=main?gradeOf():null, CC=main?ccAt(TNOW,AG):null;" in ex_ and "this.fillStyle=CC.mul;" in ex_ and ex_.count("ccPx(t,()=>") == 3 and "CC=ccAt(t,false); if(G||CC) X.filter=ccF(CC,G);" in ex_
+               and "o+=ccSec(h);" in ap_ and "o+=ccChk(c);" in ap_ and "api('/hs/color',{act:clear?'clear':'auto'})" in ap_ and "tog('cc.on'" in ap_ and "'cc.amount'" in ap_
+               and all(("%s:[" % k) in i18_ for k in ("ccT", "ccHint", "ccGo", "ccFix", "ccAgain", "ccClear", "ccOn", "ccOnSub", "ccAmt", "ccClip", "ccSep", "ccDoneHint", "ccChkHint", "ccApplied", "ccCleared", "ccFail") + tuple("cc_" + x for x in CC_CODES + ("match", "ok")))
+               and 'if p == "/hs/color":' in me_ and 'elif cmd == "color": cmd_color(work, rest)' in me_ and 'h_["ccs"] = _ins_split(h_["ccs"], at, dd)' in me_ and 'hs["ccs"] = mv(hs["ccs"])' in me_ and '"color": color, **xs}' in me_
+               and "hs color" in open(J(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.64: تصحيح الألوان التلقائي (اللقطة المعتمة الصفراء تنفتح ويرجع أبيضها، السليمة ما تتغيّر، القوة والإطفاء، الفحص يلقاها، والزاوية الثانية بقياسها)",
+            meas_ and iss_ and cli_ and ins_ and okj and ui_, "meas %s iss %s cli %s ins %s js %s ui %s L %s" % (meas_, iss_, cli_, ins_, jc, ui_, L_))
+    except (Exception, SystemExit) as e: chk("4.64", False, str(e)[:240])
+    try:   # 4.65: التبديل حسب المتكلم: شخصين كل واحد قدامه جوال (صوته أعلى بجواله)، رد قصير ما يقلب، القلب، والجوالين بنفس الصوت ما يغيّر شي
+        import random as _rd, wave as _wv, struct as _st
+        TR_ = [(0, 4.0, 1), (4.0, 7.2, 2), (7.2, 8.8, 1), (8.8, 9.6, 2), (9.6, 10.4, 1), (10.4, 99, 2)]   # 8.8-9.6 رد قصير وسط كلام الأول
+        def _two(path, dur, shift, g1, g2, seed=11):
+            rnd = _rd.Random(seed); ev = []; t_ = -20.0
+            while t_ < 60:
+                d_ = rnd.uniform(0.08, 0.32); ev.append((t_, t_ + d_, rnd.uniform(0.3, 1.0), rnd.uniform(140, 320))); t_ += d_ + (rnd.uniform(0.25, 0.6) if rnd.random() < 0.12 else rnd.uniform(0.02, 0.08))
+            sr_ = 8000; out_ = bytearray(); nz_ = _rd.Random(seed + 1); j_ = 0
+            for i_ in range(int(dur * sr_)):
+                ts_ = i_ / sr_ - shift
+                while j_ < len(ev) and ev[j_][1] < ts_: j_ += 1
+                v_ = 0.0
+                if j_ < len(ev) and ev[j_][0] <= ts_ <= ev[j_][1]:
+                    sp_ = next((s_ for a_, b_, s_ in TR_ if a_ <= ts_ < b_), 1)
+                    v_ = (g1 if sp_ == 1 else g2) * ev[j_][2] * 0.5 * math.sin(2 * math.pi * ev[j_][3] * ts_) * math.sin(math.pi * (ts_ - ev[j_][0]) / (ev[j_][1] - ev[j_][0]))
+                v_ += 0.01 * (nz_.random() * 2 - 1); out_ += _st.pack("<h", int(max(-1, min(1, v_)) * 30000))
+            w_ = _wv.open(path + ".wav", "wb"); w_.setnchannels(1); w_.setsampwidth(2); w_.setframerate(sr_); w_.writeframes(bytes(out_)); w_.close()
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=%s:r=%d:d=%s" % ("180x320" if shift == 0 else "320x180", 30 if shift == 0 else 25, dur), "-i", path + ".wav",
+                            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path], check=True, capture_output=True, timeout=60)
+        td = tempfile.mkdtemp(prefix="hs-65-"); qlog = lambda *a: None
+        try:
+            _two(J(td, "src.mov"), 12, 0, 1.0, 0.3); _two(J(td, "cam2.mp4"), 14, 1.23, 0.3, 1.0); _two(J(td, "same.mp4"), 14, 1.23, 1.0, 0.3)
+            wj(J(td, "cut.json"), {"keep": [[0.0, 12.0]]}); os.makedirs(J(td, ".hs")); wj(media_path(td), {"keep": [[0.0, 12.0]]})
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(td, "src.mov"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", J(td, "cutz.mp4")], check=True, capture_output=True, timeout=60)
+            os.makedirs(J(td, "vfr")); subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(td, "cutz.mp4"), "-vf", "fps=30", "-q:v", "3", J(td, "vfr", "%05d.jpg")], check=True, capture_output=True, timeout=60)
+            wj(J(td, "caps.json"), {"total": 12.0, "cards": [{"s": round(i_ * 0.8, 2), "e": round(i_ * 0.8 + 0.75, 2), "w": [{"t": "x", "s": round(i_ * 0.8, 2), "e": round(i_ * 0.8 + 0.35, 2)}, {"t": "y", "s": round(i_ * 0.8 + 0.4, 2), "e": round(i_ * 0.8 + 0.75, 2)}]} for i_ in range(15)]})
+            wj(J(td, "studio.json"), {"hs": {}}); none_ = angle_speaker(td).get("ok") is False
+            angle_add(td, J(td, "cam2.mp4"), qlog); best_ = angle_auto_best(td)
+            L1_ = angle_layers(hs_of(load_studio(td))); S1_ = angle_of(hs_of(load_studio(td))).get("spk") or {}
+            r2_ = angle_speaker(td, swap=True); L2_ = [(L["s"], L["e"]) for L in angle_layers(hs_of(load_studio(td)))]
+            r3_ = angle_speaker(td); L3_ = [(L["s"], L["e"]) for L in angle_layers(hs_of(load_studio(td)))]   # بدون swap: يكمل على آخر اختيار (مقلوب)
+            CL_ = [[PY, os.path.abspath(__file__), "angle", td] + a_ for a_ in (["speaker", "noswap"], ["speaker", "swap", "hold=2"], ["speaker", "noswap"], ["status"])]
+            rc_ = [subprocess.run(c_, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300).returncode for c_ in CL_]
+            L4_ = [(L["s"], L["e"]) for L in angle_layers(hs_of(load_studio(td)))]
+            angle_add(td, J(td, "same.mp4"), qlog); keep_L = [(L["s"], L["e"]) for L in angle_layers(hs_of(load_studio(td)))]
+            r5_ = angle_speaker(td); L5_ = [(L["s"], L["e"]) for L in angle_layers(hs_of(load_studio(td)))]
+            angle_auto_best(td); S6_ = angle_of(hs_of(load_studio(td))).get("spk"); L6_ = angle_layers(hs_of(load_studio(td)))
+            rc_.append(subprocess.run([PY, os.path.abspath(__file__), "angle", td, "speaker"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300).returncode)
+        finally: shutil.rmtree(td, ignore_errors=True)
+        nr = lambda X_, Y_: len(X_) == len(Y_) and all(abs(a_ - c_) <= 0.05 and abs(b_ - d_) <= 0.05 for (a_, b_), (c_, d_) in zip(X_, Y_))
+        ok_ = (none_ and nr(best_, [(4.0, 7.2), (10.4, 12.0)]) and len(L1_) == 2 and all(L.get("spk") for L in L1_) and S1_.get("gap", 0) >= 6 and S1_.get("swap") is False
+               and r2_.get("ok") and nr(L2_, [(0.0, 4.0), (7.2, 10.4)]) and r3_.get("swap") is True and nr(L3_, L2_) and rc_[:4] == [0, 0, 0, 0] and nr(L4_, [(4.0, 7.2), (10.4, 12.0)])
+               and r5_.get("ok") is False and (r5_.get("gap") or 99) < 3 and L5_ == keep_L and S6_ is None and len(L6_) >= 1 and not any(L.get("spk") for L in L6_) and rc_[4] == 1)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = (all(x in ap_ for x in ("function angleSpk(swap)", "id=\"mcSpk\"", "id=\"mcSpkSwap\"", "act:'speaker'")) and all(("%s:[" % k) in i18_ for k in ("mcSpk", "mcSpkSwap", "mcSpkSub", "mcSpkOn", "mcSpkWork", "mcSpkMade"))
+               and "صوت الجوالين متقارب" in i18_ and 'if act == "speaker":' in me_ and "angle_auto_best(work, base.log)" in me_ and "hs angle <work> speaker" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.65: التبديل حسب المتكلم (كل جوال يسمع اللي قدامه أعلى): الكاميرا تروح للي يتكلم، الرد القصير ما يقلبها، «اقلب الكاميرتين»، والجوالين بنفس الصوت ما يغيّر شي ويرجع للتوزيع العادي",
+            ok_ and ui_, "none %s best %s L1 %s S1 %s L2 %s r3 %s L3 %s rc %s L4 %s r5 %s L5 %s keep %s S6 %s L6 %s ui %s" % (none_, best_, [(L["s"], L["e"]) for L in L1_], S1_, L2_, r3_.get("swap"), L3_, rc_, L4_, r5_, L5_, keep_L, S6_, len(L6_), ui_))
+    except (Exception, SystemExit) as e: chk("4.65", False, str(e)[:240])
+    try:   # 4.66: صوت كل واحد من جواله: كلام الشخص الثاني من جواله (مو بعيد)، الأول نفس صوته، التزامن بالضبط، والمطفي نفس القديم
+        import random as _rd, wave as _wv, struct as _st
+        TR6 = [(0, 4.0, 1), (4.0, 7.2, 2), (7.2, 8.8, 1), (8.8, 9.6, 2), (9.6, 10.4, 1), (10.4, 99, 2)]
+        def _two6(path, dur, shift, g1, g2, seed=11):
+            rnd = _rd.Random(seed); ev = []; t_ = -20.0
+            while t_ < 60:
+                d_ = rnd.uniform(0.08, 0.32); ev.append((t_, t_ + d_, rnd.uniform(0.3, 1.0), rnd.uniform(140, 320))); t_ += d_ + (rnd.uniform(0.25, 0.6) if rnd.random() < 0.12 else rnd.uniform(0.02, 0.08))
+            sr_ = 8000; out_ = bytearray(); nz_ = _rd.Random(seed + 1); j_ = 0
+            for i_ in range(int(dur * sr_)):
+                ts_ = i_ / sr_ - shift
+                while j_ < len(ev) and ev[j_][1] < ts_: j_ += 1
+                v_ = 0.0
+                if j_ < len(ev) and ev[j_][0] <= ts_ <= ev[j_][1]:
+                    sp_ = next((s_ for a_, b_, s_ in TR6 if a_ <= ts_ < b_), 1)
+                    v_ = (g1 if sp_ == 1 else g2) * ev[j_][2] * 0.5 * math.sin(2 * math.pi * ev[j_][3] * ts_) * math.sin(math.pi * (ts_ - ev[j_][0]) / (ev[j_][1] - ev[j_][0]))
+                v_ += 0.01 * (nz_.random() * 2 - 1); out_ += _st.pack("<h", int(max(-1, min(1, v_)) * 30000))
+            w_ = _wv.open(path + ".wav", "wb"); w_.setnchannels(1); w_.setsampwidth(2); w_.setframerate(sr_); w_.writeframes(bytes(out_)); w_.close()
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=%s:r=%d:d=%s" % ("180x320" if shift == 0 else "320x180", 30 if shift == 0 else 25, dur), "-i", path + ".wav",
+                            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path], check=True, capture_output=True, timeout=60)
+        td = tempfile.mkdtemp(prefix="hs-66-"); qlog = lambda *a: None
+        try:
+            _two6(J(td, "src.mov"), 12, 0, 1.0, 0.3); _two6(J(td, "cam2.mp4"), 14, 1.23, 0.3, 1.0); _two6(J(td, "same.mp4"), 14, 1.23, 1.0, 0.3)
+            wj(J(td, "cut.json"), {"keep": [[0.0, 12.0]]}); os.makedirs(J(td, ".hs")); wj(media_path(td), {"keep": [[0.0, 12.0]]})
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(td, "src.mov"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", J(td, "cutz.mp4")], check=True, capture_output=True, timeout=60)
+            os.makedirs(J(td, "vfr")); subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", J(td, "cutz.mp4"), "-vf", "fps=30", "-q:v", "3", J(td, "vfr", "%05d.jpg")], check=True, capture_output=True, timeout=60)
+            wj(J(td, "caps.json"), {"total": 12.0, "cards": [{"s": round(i_ * 0.8, 2), "e": round(i_ * 0.8 + 0.75, 2), "w": [{"t": "x", "s": round(i_ * 0.8, 2), "e": round(i_ * 0.8 + 0.35, 2)}, {"t": "y", "s": round(i_ * 0.8 + 0.4, 2), "e": round(i_ * 0.8 + 0.75, 2)}]} for i_ in range(15)]})
+            wj(J(td, "studio.json"), {"hs": {}}); angle_add(td, J(td, "cam2.mp4"), qlog); angle_auto_best(td)
+            sv0_ = sv_sig(td); off_ = mic_ready(td) is None and voice_track(td, {}, qlog) == (None, "") and voice_src(td) == J(td, "cutz.mp4")
+            r1_ = mic_set(td, True, qlog); f_ = mic_ready(td); vt_ = voice_track(td, {}, qlog); sv1_ = sv_sig(td)
+            dR_, dO_, dC_ = _db10(J(td, "cutz.mp4")), _db10(f_), _db10(J(td, "cam2.mp4"))
+            def lv_(X_, a_, b_):
+                v_ = sorted(x for x in X_[int(a_ * 100):int(b_ * 100)] if x > -60); return v_[len(v_) // 2] if v_ else -99
+            up_ = [lv_(dO_, a_ + 0.1, min(b_, 12) - 0.1) - lv_(dR_, a_ + 0.1, min(b_, 12) - 0.1) for a_, b_, sp_ in TR6 if sp_ == 2]   # الشخص الثاني صار من جواله (أعلى بـ 10 dB تقريباً)
+            same_ = max(abs(dO_[i_] - dR_[i_]) for i_ in range(30, 370) if dR_[i_] > -45)   # الشخص الأول نفس صوته بالضبط
+            sy_ = [abs((dO_[i_] - r1_["gain"]) - dC_[i_ + 123]) for i_ in range(430, 690) if dC_[i_ + 123] > -40]   # والثاني من جواله بنفس اللحظة (الإزاحة 1.23 ث)
+            sy_ = sorted(sy_)[len(sy_) // 2] if sy_ else 99
+            CL_ = [[PY, os.path.abspath(__file__), "angle", td] + a_ for a_ in (["mic", "off"], ["mic", "on"], ["status"])]
+            rc_ = []; outs_ = ""
+            for c_ in CL_:
+                p_ = subprocess.run(c_, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300); rc_.append(p_.returncode); outs_ += p_.stdout
+            on2_ = mic_on(hs_of(load_studio(td)))
+            angle_add(td, J(td, "same.mp4"), qlog); r3_ = mic_set(td, True, qlog); off3_ = not mic_on(hs_of(load_studio(td))) and mic_ready(td) is None
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ok_ = (off_ and r1_.get("ok") and abs(r1_.get("gain", 99)) <= 4 and 0.3 <= r1_.get("share", 0) <= 0.65 and bool(f_) and vt_ == (f_, "mic") and sv1_ != sv0_
+               and len(up_) == 3 and min(up_) >= 7 and same_ <= 0.6 and sy_ <= 1.5 and rc_ == [0, 0, 0] and "شغّال" in outs_ and on2_ and r3_.get("ok") is False and off3_)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = (all(x in ap_ for x in ("async function angleMic(on)", "id=\"mcMic\"", "act:'mic',on", "':mic'+(hs().angle.mic.at||0)")) and all(("%s:[" % k) in i18_ for k in ("mcMic", "mcMicSub", "mcMicOn", "mcMicWork", "mcMicMade", "mcMicOff"))
+               and 'if act == "mic":' in me_ and 'chain = (CLEAN_AF if mix.get("clean") and (not svf or svm == "mic") else "")' in me_ and "src = mic_ready(work, log) or src" in me_ and "mf_ = mic_ready(work); src = mf_ or src" in me_
+               and "hs angle <work> mic on" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.66: صوت كل واحد من جواله: الشخص الثاني يطلع من جواله (أعلى ومو بعيد) بنفس اللحظة، الأول نفس صوته، مستوى الجوالين متطابق، والمطفي نفس القديم، والجوالين بنفس الصوت ما يشتغل",
+            ok_ and ui_, "off %s r1 %s vt %s up %s same %.2f sync %.2f rc %s on2 %s r3 %s off3 %s ui %s" % (off_, r1_, vt_[1], [round(x, 1) for x in up_], same_, sy_, rc_, on2_, r3_.get("ok"), off3_, ui_))
+    except (Exception, SystemExit) as e: chk("4.66", False, str(e)[:240])
+    try:   # 4.67: رد على تعليق (كرت التعليق اللي ترد عليه)
+        import contextlib, io
+        td = tempfile.mkdtemp(prefix="hs-rc-")
+        try:
+            wj(J(td, "studio.json"), {"hs": {"layers": []}})
+            with contextlib.redirect_stdout(io.StringIO()): cmd_layer(td, ["add", "type=mg", "kind=reply", "text=كيف  تسوي\\nالكابشن؟", "user=@sara", "likes=120", "s=1"])
+            R_ = hs_of(load_studio(td))["layers"][-1]
+            cli_ = (R_["kind"] == "reply" and R_["text"] == "كيف تسوي الكابشن؟" and R_["style"] == "light" and R_["typing"] is True and abs(R_["e"] - 6.0) < 1e-6
+                    and R_["user"] == "@sara" and R_["likes"] == "120" and R_["track"] == 1 and R_["y"] == 0.12)
+            with contextlib.redirect_stdout(io.StringIO()): cmd_layer(td, ["add", "type=mg", "kind=reply", "text=x", "user=123", "style=dark", "typing=no", "s=0", "e=3"])
+            R2_ = hs_of(load_studio(td))["layers"][-1]; cli_ = cli_ and R2_["style"] == "dark" and R2_["typing"] is False and R2_["user"] == "123" and R2_["e"] == 3
+            bad_ = 0
+            for a_ in (["style=glass", "text=x"], ["text= "], ["text=x", "typing=maybe"], ["text=x", "s=1", "e=1.5"], ["text=" + "ب" * 270]):
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()): cmd_layer(td, ["add", "type=mg", "kind=reply"] + a_)
+                except SystemExit: bad_ += 1
+            cli_ = cli_ and bad_ == 5 and len(hs_of(load_studio(td))["layers"]) == 2
+        finally: shutil.rmtree(td, ignore_errors=True)
+        ex_ = open(J(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(J(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(J(HERE, "i18n.js"), encoding="utf-8").read()
+        jr = None; m_ = re.search(r"/\*REPLYK\*/(.*?)/\*REPLYK-END\*/", ex_, re.S)
+        if m_ and shutil.which("node"):
+            r_ = subprocess.run(["node", "-e", m_.group(1) + """
+const D=5, n=60, K=(lt,ty,f)=>replyK(lt,D,n,ty,f); let jump=0, mono=true, over=0, p=K(0,true,false);
+for(let i=1;i<=500;i++){ const q=K(i*D/500,true,false); jump=Math.max(jump,Math.abs(q.a-p.a),Math.abs(q.sc-p.sc)); if(q.ch<p.ch) mono=false; over=Math.max(over,q.sc); p=q; }
+console.log(JSON.stringify({z0:K(0,true,false),f0:K(0,true,true),a5:K(0.5,true,false),s1:K(1.2,true,false),tEnd:K(3.4,true,false),noT:K(0,false,true),noT2:K(2,false,true),end:K(D,true,false),jump,mono,over,first:K(0.3,true,false).ch,mid:K(1.2,true,false).ch}));"""], capture_output=True, text=True, timeout=60)
+            if r_.returncode == 0: jr = json.loads(r_.stdout.strip())
+        okj = (jr is not None and jr["z0"]["a"] < 1e-9 and jr["f0"]["a"] == 1 and jr["a5"]["a"] == 1 and abs(jr["s1"]["sc"] - 1) < 0.01 and jr["over"] < 1.06 and jr["jump"] < 0.2 and jr["mono"]
+               and jr["z0"]["ch"] == 0 and jr["first"] <= 1 and 0 < jr["mid"] < 60 and jr["tEnd"]["ch"] == 60 and not jr["tEnd"]["caret"] and jr["noT"]["ch"] == 60 and not jr["noT"]["caret"] and not jr["noT2"]["caret"] and jr["end"]["a"] < 1e-9)
+        ui_ = ("MGK.reply=mgReply;" in ex_ and "function mgReply(L,t)" in ex_ and "replyLines(txt,W-pad*2,fB,4)" in ex_
+               and "'freeze','mask','reply']" in ap_ and "mask:2.4,reply:5}" in ap_ and "function replyHere()" in ap_ and "rcp={l:t('ctxReply'),f:replyHere}" in ap_ and "[cut,frz,msk,rcp," in ap_ and "else if(k==='reply')" in ap_ and "reply:{user:'sara'" in ap_ and "  reply:'<svg" in ap_
+               and all(("%s:[" % k) in i18_ for k in ("mg_reply", "ctxReply", "replyAdded", "replyEnd", "rcHint", "rcUser", "rcStyle", "rc_light", "rc_dark", "rcTyping", "rcLikes", "rcLabel", "rcAvatar"))
+               and "kind=reply" in open(J(HERE, "SKILL.md"), encoding="utf-8").read() and "reply" in MG_ALL)
+        chk("4.67: رد على تعليق (كرت التعليق ينط من ذيله، ينكتب حرف حرف ويستقر، ويطلع بهدوء)، بالطرفية والاستوديو وكليك يمين",
+            cli_ and okj and ui_, "cli %s js %s ui %s" % (cli_, jr, ui_))
+    except (Exception, SystemExit) as e: chk("4.67", False, str(e)[:240])
+    try:   # 4.68: تسريع جزء (Speed ramp): القطع والدخول الناعم، الصورة والصوت بنفس اللحظة بعد التسريع، النبرة ما تتغيّر، SRT والفحص بالتوقيت الجديد، والطرفية والواجهة
+        H1 = {"layers": [{"id": "L1", "type": "speed", "s": 1.0, "e": 3.0, "r": 2, "ramp": False}]}
+        G1 = speed_segs(H1, 4.0); G2 = speed_segs({"layers": [{**H1["layers"][0], "ramp": True}]}, 4.0)
+        G3 = speed_segs({"speed": {"r": 1.2}, "layers": H1["layers"] + [{"id": "L2", "type": "speed", "s": 2.0, "e": 3.5, "r": 4, "ramp": False}]}, 4.0)
+        u_ = (G1 == [(0.0, 1.0, 1.0), (1.0, 3.0, 2.0), (3.0, 4.0, 1.0)] and abs(speed_map(G1, 4.0) - 3.0) < 1e-6 and abs(speed_map(G1, 2.0) - 1.5) < 1e-6
+              and len(G2) == 9 and G2[1][2] < G2[2][2] < G2[3][2] < 2.0 and G2[4][2] == 2.0 and 3.0 < speed_map(G2, 4.0) < 3.2 and all(abs(a[1] - b[0]) < 1e-6 for a, b in zip(G2, G2[1:]))
+              and abs(G3[0][2] - 1.2) < 1e-6 and abs(G3[1][2] - 2.4) < 1e-6 and abs(G3[2][2] - 4.8) < 1e-6 and len(G3) == 4 and abs(G3[-1][2] - 1.2) < 1e-6
+              and speed_parts({"layers": [{"type": "speed", "s": 1, "e": 1.1, "r": 2}, {"type": "speed", "s": 1, "e": 3, "r": 1.0}, {"type": "speed", "s": 1, "e": 3, "r": "x"}, {"type": "speed", "s": 1, "e": 3, "r": 2, "off": True}]}) == []
+              and speed_segs({}, 5.0) == [(0.0, 5.0, 1.0)] and speed_out({"speed": {"r": 1.25}}, 10) == 8.0 and _atempo(4.0) == ["atempo=2.0", "atempo=2.0000"] and _atempo(1.5) == ["atempo=1.5000"])
+        td = tempfile.mkdtemp(prefix="hs-spp-"); os.makedirs(J(td, "out"))
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "nullsrc=s=64x64:r=30:d=4,geq=lum='N*2':cb=128:cr=128", "-start_number", "1", "-q:v", "2", J(td, "out", "%05d.jpg")], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "nullsrc=s=64x64:r=30:d=4", "-f", "lavfi", "-i", "aevalsrc='if(between(t,1.5,2.5),0.5*sin(2*PI*300*t),0)':s=48000:d=4",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "-y", J(td, "cutz.mp4")], check=True)
+        wj(J(td, "caps.json"), {"total": 4.0, "cards": [{"s": 0.2, "e": 0.9, "w": [{"t": "أول", "s": 0.2, "e": 0.9}]}, {"s": 3.2, "e": 3.8, "w": [{"t": "تجربة", "s": 3.2, "e": 3.8}]}]}); wj(J(td, "sfx.json"), {"outro": 0})
+        def ys_(f):   # متوسط الإضاءة لكل فريم
+            b = subprocess.run(["ffmpeg", "-v", "error", "-i", f, "-vf", "scale=8:8,format=gray", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+            return [sum(b[i:i + 64]) / 64.0 for i in range(0, len(b) - 63, 64)]
+        def pcm_(f):
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-i", f, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"], capture_output=True, check=True).stdout
+            a = array.array("h"); a.frombytes(raw[:len(raw) // 2 * 2]); return a
+        cmds_ = []; run0_ = globals()["run"]
+        def run_rec(cmd, log, *a, **k): cmds_.append(list(cmd)); return run0_(cmd, log, *a, **k)
+        globals()["run"] = run_rec
+        try:
+            wj(J(td, "studio.json"), {"hs": {}}); encode(td, None, lambda *a: None, J(td, "f0.mp4"), J(td, "m0.mp4"), {}); c0_ = " ".join(cmds_[-1])
+            wj(J(td, "studio.json"), {"hs": H1}); encode(td, None, lambda *a: None, J(td, "f1.mp4"), J(td, "m1.mp4"), {}); c1_ = " ".join(cmds_[-1])
+        finally: globals()["run"] = run0_
+        Y0, Y1 = ys_(J(td, "f0.mp4")), ys_(J(td, "f1.mp4")); d1_ = ffdur(J(td, "f1.mp4"))
+        src_ = lambda y: min(range(len(Y0)), key=lambda i: abs(Y0[i] - y))   # الفريم الأصلي اللي يطابق فريم بعد التسريع
+        fr_ = [src_(Y1[int(round(tt * 30))]) for tt in (0.5, 1.5, 2.5)]   # 0.5 ← 0.5 · 1.5 ← 2.0 (داخل التسريع) · 2.5 ← 3.5
+        frames_ok = abs(fr_[0] - 15) <= 1 and abs(fr_[1] - 60) <= 2 and abs(fr_[2] - 105) <= 1
+        A = pcm_(J(td, "f1.mp4")); on_ = [i / 8000.0 for i in range(0, len(A) - 80, 80) if max(abs(x) for x in A[i:i + 80]) > 3000]
+        seg_ = A[int(1.32 * 8000):int(1.68 * 8000)]; z_ = sum(1 for i in range(1, len(seg_)) if (seg_[i - 1] < 0) != (seg_[i] < 0)); hz1_ = z_ / 2.0 / (len(seg_) / 8000.0) if len(seg_) else 0
+        aud_ok = bool(on_) and abs(on_[0] - 1.25) < 0.04 and abs(on_[-1] - 1.75) < 0.05 and abs(hz1_ - 300) < 15
+        srt_ = make_srt(td, "ar")[0]
+        none_ = "setpts='" not in c0_ and "asplit" not in c0_ and "setpts='" in c1_ and "asplit=3" in c1_ and "atempo=2.0000" in c1_
+        import io, contextlib
+        wj(J(td, "studio.json"), {"hs": {}})
+        with contextlib.redirect_stdout(io.StringIO()): cmd_speed(td, ["auto"])
+        q_ = [(L["s"], L["e"], L["r"]) for L in hs_of(load_studio(td)).get("layers") or [] if L.get("type") == "speed"]
+        with contextlib.redirect_stdout(io.StringIO()): cmd_speed(td, ["part", "1.5", "2.5", "x3", "noramp"])
+        q2_ = sorted((L["s"], L["e"], L["r"], L["ramp"]) for L in hs_of(load_studio(td)).get("layers") or [] if L.get("type") == "speed")
+        bad_ = 0
+        for a_ in (["part", "1", "1.2"], ["part", "1", "3", "x9"]):
+            try:
+                with contextlib.redirect_stdout(io.StringIO()): cmd_speed(td, a_)
+            except SystemExit: bad_ += 1
+        ck_ = check(td); chk_ok = ck_.get("parts") == 3 and abs(ck_.get("out", 0) - speed_out(hs_of(load_studio(td)), 4.0)) < 0.02 and ck_["out"] < 4.0
+        with contextlib.redirect_stdout(io.StringIO()): cmd_speed(td, ["clear"])
+        clr_ = not any(L.get("type") == "speed" for L in hs_of(load_studio(td)).get("layers") or [])
+        shutil.rmtree(td, ignore_errors=True)
+        cli_ = (q_ == [(1.15, 2.95, 2.0)] and q2_ == [(1.15, 1.5, 2.0, True), (1.5, 2.5, 3.0, False), (2.5, 2.95, 2.0, True)] and bad_ == 2 and chk_ok and clr_)
+        ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read(); me_ = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ui_ = (all(x in ap_ for x in ("function spSegs(end)", "function spAt(x)", "function sppSec()", "function sppInsp(L)", "if(L.type==='speed') o+=sppInsp(L);", "const spd={l:t('sppCtx'),f:spHere};", "[cut,frz,msk,rcp,slw,spd,", "const w_=spAt(x);", "L.type==='speed'?t('sppName'"))
+               and all(("%s:[" % k) in i18_ for k in ("sppT", "sppSub", "sppHere", "sppAuto", "sppClear", "sppHint", "sppRate", "sppRamp", "sppRampSub", "sppPartLen", "sppFastHint", "sppLayerHint", "sppName", "type_speed", "sppCtx", "sppShort", "sppAdded", "sppNone", "sppAutoDone", "sppCleared"))
+               and '"anno", "speed"):' in me_ and "hs speed <work> part" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read() and ".clip.speed{" in open(os.path.join(HERE, "studio.html"), encoding="utf-8").read())
+        chk("4.68: تسريع جزء (Speed ramp): الجزء يقصر والصورة والصوت بنفس اللحظة، صوتك بنفس نبرته، الدخول الناعم متدرج، بدون تسريع نفس أمر التصدير القديم، SRT والفحص بالتوقيت الجديد، و«سرّع اللي بدون كلام»",
+            u_ and abs(d1_ - 3.0) < 0.07 and frames_ok and aud_ok and none_ and "00:00:02,200 --> 00:00:02,800" in srt_ and cli_ and ui_,
+            "unit %s dur %.2f frames %s audio %s/%.0fHz none %s srt %s cli %s/%s ui %s" % (u_, d1_, fr_, [round(on_[0], 2), round(on_[-1], 2)] if on_ else None, hz1_, none_, srt_.split("\n\n")[-1][:34].replace("\n", " "), q_, q2_, ui_))
+    except (Exception, SystemExit) as e: chk("4.68", False, str(e)[:240])
+    try:   # 4.69: طمس الوجوه: الدمج والمتابعة (المتحدث يرجع بعد القص هو نفسه، الكشف الغلط ينشال)، الاختيار، الفحص، الطرفية، والرسم والواجهة
+        P0 = [0.5, 0.45, 0.42, 0.24]   # المتحدث: كبير بالنص
+        fr_ = []
+        for i in range(41):
+            n = 1 + i * 6; t = (n - 1) / 30.0; d = []
+            if t < 3.0 or t >= 4.0: d += [P0 + [0.95], [P0[0] + 0.01, P0[1], P0[2] * 0.97, P0[3] * 0.97, 0.9]]   # نفس الوجه من الكادر كامل ومن مربع
+            if i != 20: d.append([0.1 + 0.08 * t, 0.2, 0.07, 0.04, 0.8])      # واحد بالخلفية يمشي، ويغيب لقطة وحدة
+            if i == 21: d.append([0.1 + 0.08 * t, 0.2, 0.16, 0.09, 0.6])      # كشف أكبر بكثير بنفس المكان (يد مثلاً): ما يغيّر مقاسه
+            if i == 9: d.append([0.8, 0.85, 0.05, 0.03, 0.55])                # كشف غلط مرة وحدة
+            fr_.append([n, d])
+        T_ = fb_track({"fps": 30, "fr": fr_})
+        mains_ = [x for x in T_ if x["main"]]; oth_ = [x for x in T_ if not x["main"]]
+        trk_ok = (len(T_) == 3 and len(mains_) == 2 and len(oth_) == 1 and oth_[0]["t0"] == 0.0 and oth_[0]["t1"] == 8.0 and oth_[0]["h"] == 0.04 and mains_[0]["t1"] < 3.0 and mains_[1]["t0"] >= 4.0)
+        st_ = fb_track({"fps": 30, "fr": [[1 + i * 6, [[0.3, 0.3, 0.06, 0.035, 0.9], [0.7, 0.6, 0.05, 0.03, 0.9]]] for i in range(10)]})   # تصوير شارع: ما فيه متحدث، الكل ينطمس
+        street_ok = len(st_) == 2 and not any(x["main"] for x in st_) and all(fb_blurred(x, fblur_of({})) for x in st_)
+        F0_ = fblur_of({}); F1_ = fblur_of({"fblur": {"on": True, "style": "x", "amount": 5, "pick": {"1": True, 3: False}}})
+        pick_ok = (F0_ == {"on": False, "style": "blur", "amount": 0.7, "pick": {}} and F1_["style"] == "blur" and F1_["amount"] == 1.0 and fb_blurred({"id": 1, "main": True}, F1_) and not fb_blurred({"id": 3, "main": False}, F1_)
+                   and fb_blurred({"id": 4, "main": False}, F1_) and not fb_blurred({"id": 4, "main": True}, F0_) and fb_merge([[0.5, 0.5, 0.1, 0.06, 0.3]]) == [] and len(fb_merge([[0.5, 0.5, 0.1, 0.06, 0.9], [0.51, 0.5, 0.1, 0.06, 0.8], [0.2, 0.2, 0.1, 0.06, 0.7]])) == 2)
+        td = tempfile.mkdtemp(prefix="hs-fb-"); os.makedirs(J(td, "vfr"))
+        for i in range(1, 241): open(J(td, "vfr", "%05d.jpg" % i), "wb").close()
+        wj(J(td, "studio.json"), {"hs": {}}); wj(J(td, "faces-raw.json"), {"fps": 30, "fr": fr_})
+        vr0_ = globals()["vision_run"]; globals()["vision_run"] = lambda w, a, log=print: a[0] == "faces"
+        import io, contextlib
+        try:
+            no_ = fb_issue(td) is None and fb_view(td)["scanned"] is False
+            with contextlib.redirect_stdout(io.StringIO()) as o_: cmd_blur(td, ["scan"])
+            v_ = fb_view(td); js_ = open(J(td, "hs-blur.js"), encoding="utf-8").read()
+            scan_ok = (v_["scanned"] and not v_["stale"] and v_["fblur"]["on"] and [f["blur"] for f in v_["faces"]] == [False, True, False] and js_.startswith("window.__hsBlur={") and "لقيت 3 وجوه (منهم أنت)، وانطمس وجه واحد" in o_.getvalue())
+            iss0_ = fb_issue(td)
+            with contextlib.redirect_stdout(io.StringIO()): cmd_blur(td, ["show", "2"])
+            iss1_ = fb_issue(td)
+            with contextlib.redirect_stdout(io.StringIO()): cmd_blur(td, ["style", "pixel"]); cmd_blur(td, ["amount", "40"]); cmd_blur(td, ["hide", "1"])
+            F2_ = fblur_of(hs_of(load_studio(td)))
+            bad_ = 0
+            for a_ in (["hide", "9"], ["style", "neon"], ["amount", "x"], ["zzz", "1"]):
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()): cmd_blur(td, a_)
+                except SystemExit: bad_ += 1
+            with contextlib.redirect_stdout(io.StringIO()): cmd_blur(td, ["auto"])
+            auto_ = fblur_of(hs_of(load_studio(td)))["pick"] == {}
+            open(J(td, "vfr", "00241.jpg"), "wb").close(); stale_ = fb_stale(td) and (fb_issue(td) or {}).get("stale") is True
+            ens_ = []; globals()["vision_run"] = lambda w, a, log=print: ens_.append(a) or True
+            fb_ensure(td, lambda *a: None); ens_ok = ens_ == [["faces", "6"]] and not fb_stale(td)
+            with contextlib.redirect_stdout(io.StringIO()): cmd_blur(td, ["off"])
+            ens2_ = []; open(J(td, "vfr", "00242.jpg"), "wb").close(); globals()["vision_run"] = lambda w, a, log=print: ens2_.append(a) or True
+            fb_ensure(td, lambda *a: None); off_ok = ens2_ == [] and fb_issue(td)["n"] == 1
+        finally: globals()["vision_run"] = vr0_
+        shutil.rmtree(td, ignore_errors=True)
+        cli_ok = (no_ and scan_ok and iss0_ is None and iss1_ and iss1_["n"] == 1 and F2_["style"] == "pixel" and F2_["amount"] == 0.4 and F2_["pick"] == {"2": False, "1": True} and bad_ == 4 and auto_ and stale_ and ens_ok and off_ok
+                  and fb_n(1) == "وجه واحد" and fb_n(2) == "وجهين" and fb_n(5) == "5 وجوه" and fb_n(12) == "12 وجه")
+        ex_ = open(os.path.join(HERE, "ext.js"), encoding="utf-8").read(); ap_ = open(os.path.join(HERE, "app.js"), encoding="utf-8").read(); i18_ = open(os.path.join(HERE, "i18n.js"), encoding="utf-8").read()
+        me_ = open(os.path.abspath(__file__), encoding="utf-8").read(); vj_ = open(os.path.join(find_engine(None) or HERE, "scripts", "21_vision.js"), encoding="utf-8").read()
+        ui_ = (all(x in ex_ for x in ("function fbPass(C,u,sw,shh,IM,base)", "if(main&&!AG&&fbOn()){ try{ fbPass(this,u,sw,shh,IM,(G||CC)?ccF(CC,G):null);", "'hs-wave.js','hs-blur.js'", "window.__hsBlurAt=fbBoxes;"))
+               and all(x in ap_ for x in ("function fbSec(h)", "function fbChk(c)", "o+=fbSec(h);", "o+=fbChk(c);", "api('/hs/blur',{act:'scan'})"))
+               and all(("%s:[" % k) in i18_ for k in ("fbT", "fbHint", "fbGo", "fbAgain", "fbAll", "fbOn", "fbOnSub", "fbStyle", "fb_blur", "fb_pixel", "fb_bar", "fbAmt", "fbYou", "fbRange", "fbFace", "fbHidden", "fbShown", "fbNone", "fbStale", "fbDoneHint", "fbScanning", "fbFound", "fbFail", "fbChkFace", "fbFix", "fbApplied"))
+               and all(x in me_ for x in ('if p == "/hs/blur":', 'if p == "/hs/blur_th":', 'elif cmd == "blur": cmd_blur(work, rest)', "    try: fb_ensure(work, log)", '"hs-face.js", "hs-mask.js", "hs-blur.js"'))
+               and "else if(mode==='faces')" in vj_ and "faces-raw.json" in vj_ and "hs blur <work> scan" in open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read())
+        chk("4.69: طمس الوجوه (كل وجه غيرك ينطمس ويمشي معه، المتحدث يرجع بعد القص بنفسه، الكشف الغلط ينشال، تصوير الشارع الكل ينطمس، الاختيار والفحص والتصدير يفحص لحاله لو تغيّر المقطع)",
+            trk_ok and street_ok and pick_ok and cli_ok and ui_,
+            "track %s %s street %s pick %s cli %s/%s/%s/%s/%s/%s/%s ui %s" % (trk_ok, [(x["id"], x["main"], x["t0"], x["t1"], x["h"]) for x in T_], street_ok, pick_ok, no_ if 'no_' in dir() else None, scan_ok if 'scan_ok' in dir() else None, iss1_ if 'iss1_' in dir() else None, bad_ if 'bad_' in dir() else None, stale_ if 'stale_' in dir() else None, ens_ok if 'ens_ok' in dir() else None, off_ok if 'off_ok' in dir() else None, ui_))
+    except (Exception, SystemExit) as e: chk("4.69", False, str(e)[:240])
     if work and os.path.isdir(work):
         eng = find_engine(engine)
         if not eng: chk("المحرّك موجود لفحص الخادم", False)
@@ -5015,7 +7182,7 @@ console.log(JSON.stringify({col,bg:A(2,2),red:A(25,50),black:A(25,80),edgeG:d[(5
                     try: urllib.request.urlopen("http://127.0.0.1:%d/hs/info" % port, timeout=2).read(); up = True; break
                     except Exception: pass
                 chk("الخادم اشتغل", up)
-                for path, need in (("/", b"app.js"), ("/hs/app.js", b"CAPPRE"), ("/hs/i18n.js", b"I18N"), ("/hs/info", b'"safe"'), ("/hs/brief", b'"cards"'), ("/hs/pulse", b'"sig"'), ("/review", b"<")) + ((("/hs/ui-font.otf", b"OTTO"),) if os.path.isfile(ui_font()) else ()):
+                for path, need in (("/", b"app.js"), ("/hs/app.js", b"CAPPRE"), ("/hs/i18n.js", b"I18N"), ("/hs/info", b'"safe"'), ("/hs/brief", b'"cards"'), ("/hs-wave.js", b"__hsWave"), ("/hs/pulse", b'"sig"'), ("/review", b"<")) + ((("/hs/ui-font.otf", b"OTTO"),) if os.path.isfile(ui_font()) else ()):
                     try: body = urllib.request.urlopen("http://127.0.0.1:%d%s" % (port, path), timeout=8).read(); chk("يرد " + path, need in body, "الرد ما فيه المتوقع")
                     except Exception as e: chk("يرد " + path, False, str(e)[:100])
             finally: pr.kill()
@@ -5133,8 +7300,10 @@ def cmd_set(work, args):
         cur[parts[-1]] = val
     wj(sp, st); print(json.dumps({k: v for k, v in hs.items() if k in ("cap", "en", "mix", "hooks", "check")}, ensure_ascii=False)[:900])
 MG_KINDS = ("stat", "slam", "check", "steps", "callout", "quote", "ring", "compare", "sting", "logo")
-MG_ALL = MG_KINDS + ("stretch", "rec", "notif", "search", "apps", "articles", "mosaic", "rewind", "ba", "freeze")   # 4.36: الطرفية تقبل موشن 4.28 والتجميد بعد
+MG_ALL = MG_KINDS + ("stretch", "rec", "notif", "search", "apps", "articles", "mosaic", "rewind", "ba", "freeze", "mask", "reply")   # 4.67: رد على تعليق · 4.36: الطرفية تقبل موشن 4.28 والتجميد بعد · 4.63: الفيديو داخل الكلمة
 FREEZE_STYLES = ("flash", "photo", "comic", "film")
+MASK_STYLES = ("in", "out", "hold")
+REPLY_STYLES = ("light", "dark")   # 4.67: كرت «رد على تعليق»
 ANNO_KINDS = ("ring", "spots", "route", "path", "wave", "tap", "boxes", "tags", "screen", "spinner", "arrow", "scribble", "underline", "highlight", "cross", "check", "lens", "spotlight", "blur", "bubble", "frame", "scan", "burst", "stars", "price")
 # ── 4.29: حركة بالمفاتيح (keyframes): نفس حساب ext.js والاستوديو، عشان Claude يقدر يحطها من الطرفية ──
 KF_TYPES = ("text", "image", "char", "lt", "mark", "draw")
@@ -5223,12 +7392,37 @@ def cmd_layer(work, args):
         return
     if sub == "add":
         o = parse_kv(args[1:])
-        if o.get("type") not in ("text", "image", "char", "fx", "split", "viz", "cover", "bg", "behind", "pip", "mark", "cursor", "lt", "collage", "kinetic", "desk", "draw", "mg", "anno"): sys.exit("type لازم: anno | mg | text | image | char | fx | split | viz | cover | bg | behind | pip | mark | cursor | lt | kinetic | desk | collage | draw")
+        if o.get("type") not in ("text", "image", "char", "fx", "split", "viz", "cover", "bg", "behind", "pip", "mark", "cursor", "lt", "collage", "kinetic", "desk", "draw", "mg", "anno", "speed"): sys.exit("type لازم: anno | mg | text | image | char | fx | split | viz | cover | bg | behind | pip | mark | cursor | lt | kinetic | desk | collage | draw | speed")
         if o["type"] == "mg" and o.get("kind") not in MG_ALL: sys.exit("kind لازم: " + " | ".join(MG_ALL))
+        if o["type"] == "speed":   # 4.68: تسريع جزء
+            try: o["r"] = float(str(o.get("r", 2)).lstrip("x×"))
+            except ValueError: sys.exit("r لازم رقم (مثل 2)")
+            if not (1.05 <= o["r"] <= SPART_MAX): sys.exit("سرعة الجزء بين 1.1 و %g" % SPART_MAX)
+            o["ramp"] = str(o.get("ramp", "yes")).lower() not in ("no", "0", "false", "off"); o.setdefault("track", 0)
         if o["type"] == "mg" and o.get("kind") == "freeze":   # 4.36: تجميد اللقطة
             if o.setdefault("style", "flash") not in FREEZE_STYLES: sys.exit("style لازم: " + " | ".join(FREEZE_STYLES))
             o.setdefault("track", 1); o.setdefault("label", "")
             if "e" not in o: o["e"] = round(float(o.get("s", 0)) + 2.2, 3)
+        if o["type"] == "mg" and o.get("kind") == "mask":   # 4.63: الفيديو داخل الكلمة
+            o["text"] = str(o.get("text") or "").replace("\\n", "\n").strip()
+            if not o["text"]: sys.exit("اكتب الكلمة: text=\"الفكرة\"")
+            if len([x for x in o["text"].split("\n") if x.strip()]) > 2: sys.exit("الكلمة سطرين بالكثير")
+            if o.setdefault("style", "in") not in MASK_STYLES: sys.exit("style لازم: " + " | ".join(MASK_STYLES))
+            o.setdefault("track", 1); o.setdefault("bg", "#F5F5F3")
+            if "e" not in o: o["e"] = round(float(o.get("s", 0)) + 2.4, 3)
+            if float(o["e"]) - float(o.get("s", 0)) < 0.6: sys.exit("المدة أقصر من 0.6 ثانية")
+        if o["type"] == "mg" and o.get("kind") == "reply":   # 4.67: رد على تعليق
+            o["text"] = re.sub(r"\s+", " ", str(o.get("text") or "")).strip()
+            if not o["text"]: sys.exit("اكتب التعليق: text=\"نص التعليق\" user=\"اسم صاحبه\"")
+            if len(o["text"]) > 260: sys.exit("التعليق طويل: 260 حرف بالكثير (الكرت يعرض أربع أسطر)")
+            if o.setdefault("style", "light") not in REPLY_STYLES: sys.exit("style لازم: " + " | ".join(REPLY_STYLES))
+            tp_ = str(o.get("typing", "yes")).strip().lower()
+            if tp_ not in ("yes", "no", "true", "false", "1", "0"): sys.exit("typing لازم: yes | no")
+            o["typing"] = tp_ in ("yes", "true", "1"); o["user"] = str(o.get("user") or "").strip()
+            if "likes" in o: o["likes"] = str(o["likes"]).strip()
+            o.setdefault("track", 1); o.setdefault("x", 0.5); o.setdefault("y", 0.12)
+            if "e" not in o: o["e"] = round(float(o.get("s", 0)) + 5.0, 3)
+            if float(o["e"]) - float(o.get("s", 0)) < 1.0: sys.exit("المدة أقصر من ثانية")
         if o["type"] == "anno":   # 4.15: تعليق على الصورة
             if o.get("kind", "ring") not in ANNO_KINDS: sys.exit("kind لازم: " + " | ".join(ANNO_KINDS))
             o.setdefault("kind", "ring"); o.setdefault("anim", "none"); o.setdefault("track", 1)
@@ -5261,7 +7455,7 @@ def cmd_hook(work, args):
     wj(sp, st); print(json.dumps(hk, ensure_ascii=False))
 def cmd_check(work):
     c = check(work); caps = rj(J(work, "caps.json"))
-    print("درجة الفحص: %d/100 · المدة %.1f ث" % (c["score"], c["total"]))
+    print("درجة الفحص: %d/100 · المدة %.1f ث" % (c["score"], c["total"]) + (" (بعد السرعة ×%g: %.1f ث)" % (c["speed"], c["out"]) if c.get("speed", 1) != 1 else ""))
     if c["firstCap"] is not None and c["firstCap"] > 1.0: print("⚠ أول كلمة تبدأ عند %.2f ث (المفروض قبل الثانية 1)" % c["firstCap"])
     for g in c["gaps"]: print("⚠ %.1f ث بلا تغيير بصري: %.2f ← %.2f" % (g["d"], g["s"], g["e"]))
     for l in c["longCaps"]: print("⚠ الجملة %d طويلة (%d كلمة)" % (l["card"] + 1, l["n"]))
@@ -5272,13 +7466,17 @@ def cmd_check(work):
     for m in c["open"]["miss"]: print("أول 3 ثواني: " + OM[m])
     for l in c["len"]:
         nm = PLATFORMS[l["p"]]["ar"]
-        print("المدة: " + ({"over": "%s ما يقبل أكثر من %d ث، ومقطعك %.0f ث" % (nm, l["max"], c["total"]), "long": "%s الأنسب له %d-%d ث، ومقطعك %.0f ث" % (nm, l["lo"], l["hi"], c["total"]),
-                            "short": "%s الأنسب له %d-%d ث، ومقطعك %.0f ث بس" % (nm, l["lo"], l["hi"], c["total"])}[l["k"]]))
+        print("المدة: " + ({"over": "%s ما يقبل أكثر من %d ث، ومقطعك %.0f ث" % (nm, l["max"], c["out"]), "long": "%s الأنسب له %d-%d ث، ومقطعك %.0f ث" % (nm, l["lo"], l["hi"], c["out"]),
+                            "short": "%s الأنسب له %d-%d ث، ومقطعك %.0f ث بس" % (nm, l["lo"], l["hi"], c["out"])}[l["k"]])
+              + (" · hs speed <work> fit %s يدخّله (×%g)" % (l["p"], l["fit"]) if l.get("fit") else ""))   # 4.59
     sh_ = c.get("shake") or {}
     if sh_.get("level") in ("light", "strong") and sh_.get("on") == "off": print("الصورة تهتز (%.1f بكسل): hs stab <work> auto يثبّتها" % sh_["jitter"])   # 4.40
     hd_ = c.get("hdr") or {}
     if hd_.get("washed"): print("ألوان الفيديو باهتة: الفيديو %s من الجوال. hs hdr <work> auto يصلّحها" % ("HDR (HLG)" if hd_.get("kind") == "hlg" else "HDR (PQ)"))   # 4.41
-    if not (c["gaps"] or c["longCaps"] or c["fillers"] or c["dupes"] or c.get("tips") or c["open"]["miss"] or c["len"] or (sh_.get("level") in ("light", "strong") and sh_.get("on") == "off") or hd_.get("washed")): print("ما فيه ملاحظات.")
+    fc_ = c.get("faces") or {}   # 4.69: طمس الوجوه
+    if fc_.get("n"): print("فيه %s غيرك ظاهر بالمقطع (%s): hs blur <work> auto يطمسهم" % (fb_n(fc_["n"]), " · ".join("%.1f-%.1f ث" % (f["t0"], f["t1"]) for f in fc_["faces"][:4])))
+    if fc_.get("stale"): print("المقطع تغيّر بعد فحص الوجوه: hs blur <work> scan (والتصدير يفحص لحاله)")
+    if not (c["gaps"] or c["longCaps"] or c["fillers"] or c["dupes"] or c.get("tips") or c["open"]["miss"] or c["len"] or (sh_.get("level") in ("light", "strong") and sh_.get("on") == "off") or hd_.get("washed") or fc_): print("ما فيه ملاحظات.")
 def brand_dir(): d = os.path.join(HOME_CFG, "brands"); os.makedirs(d, exist_ok=True); return d
 def brand_pack(work):
     hs = load_studio(work).get("hs") or {}; th = rj(J(work, "theme.json"), {}) or {}
@@ -5570,7 +7768,7 @@ def voice_transcribe(work, nid, path):
     try:
         wav = path + ".wav"; subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", path, "-ac", "1", "-ar", "16000", wav], check=True, timeout=120)
         model = hub_cfg().get("voiceModel") or "small"; od = os.path.dirname(path)
-        r = subprocess.run([PY, "-m", "whisper", wav, "--model", model, "--language", "ar", "--output_format", "txt", "--output_dir", od, "--fp16", "False", "--verbose", "False"], capture_output=True, timeout=900)
+        r = subprocess.run([PY, "-m", "whisper", wav, "--model", model, "--language", "ar", "--output_format", "txt", "--output_dir", od, "--fp16", "False", "--verbose", "False", "--condition_on_previous_text", "False"], capture_output=True, timeout=900)   # 4.70
         tp = os.path.splitext(wav)[0] + ".txt"
         if os.path.exists(tp): txt = open(tp, encoding="utf-8").read().strip()
     except Exception: pass
@@ -5688,7 +7886,7 @@ def serve(work, port, engine):
                 threading.Thread(target=vgo, daemon=True).start()
     def aux_sig():
         o = 0
-        for f in ("hs-face.js", "hs-mask.js"):
+        for f in ("hs-face.js", "hs-mask.js", "hs-blur.js"):   # 4.69: hs-blur.js (طمس الوجوه)
             try: o += int(os.path.getmtime(P(f)) * 10)
             except OSError: pass
         return o
@@ -5699,7 +7897,8 @@ def serve(work, port, engine):
         if cj_.get("pending") and cj_.get("pau") and os.path.isfile(P(cj_["pau"])): return P(cj_["pau"])   # 4.55: صوت المقطع بعد الإضافة لين يخلص الملف الكامل
         src = P("cutz.mp4")
         if not os.path.exists(src): return None
-        f = os.path.join(D, "au-%s.m4a" % vsig(work))
+        mf_ = mic_ready(work); src = mf_ or src   # 4.66: صوت كل واحد من جواله ينسمع بالمعاينة
+        f = os.path.join(D, "au-%s%s.m4a" % (vsig(work), ("-m" + os.path.basename(mf_)[4:12]) if mf_ else ""))
         with AUL:
             if not os.path.exists(f):
                 for old in glob.glob(os.path.join(D, "au-*.m4a")):
@@ -5715,7 +7914,8 @@ def serve(work, port, engine):
         if cj_.get("pending") and cj_.get("pau") and os.path.isfile(P(cj_["pau"])): return P(cj_["pau"])   # 4.56: صوت المضاف نفسه لين يخلص
         src = P("cutz.mp4")
         if not os.path.exists(src): return None
-        f = os.path.join(D, "au-clean-%s.m4a" % vsig(work))
+        mf_ = mic_ready(work); src = mf_ or src   # 4.66
+        f = os.path.join(D, "au-clean-%s%s.m4a" % (vsig(work), ("-m" + os.path.basename(mf_)[4:12]) if mf_ else ""))
         with AUL:
             if not os.path.exists(f):
                 for old in glob.glob(os.path.join(D, "au-clean-*.m4a")):
@@ -5790,11 +7990,12 @@ def serve(work, port, engine):
 
     # ── تشغيل Claude Code من الاستوديو ──
     def agent_run(task, label, gen=False, at=None):
-        exe = find_claude(); oc = None if exe else shutil.which("opencode")
-        if not exe and not oc: return False, "ما لقيت Claude Code ولا OpenCode على الجهاز"
+        kind, exe = agent_pick()   # 4.61: اللي اخترته بالإعدادات (Claude أو Codex)
+        if not exe: return False, "ما لقيت Claude Code ولا Codex ولا OpenCode على الجهاز"
         if AG["running"]: return False, "الوكيل شغّال الحين على طلب سابق"
         task = lang_hint(task)
-        if oc: return agent_run_opencode(oc, task, label)
+        if kind == "opencode": return agent_run_opencode(exe, task, label)
+        if kind == "codex": return agent_run_codex(exe, task, label, at)
         cmd = [exe, "-p", "Follow the task given on stdin. Work only inside the current project folder.", "--output-format", "stream-json", "--verbose",
                "--permission-mode", "acceptEdits", "--append-system-prompt-file", os.path.join(HERE, "AGENT.md"),
                "--add-dir", HERE, eng, "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep"] + (["mcp__claude-in-chrome", "mcp__higgsfield", "WebSearch", "WebFetch"] if gen else [])
@@ -5826,6 +8027,43 @@ def serve(work, port, engine):
                 elif p.returncode not in (0, None) and not final: say(work, claude_why("".join(plain), p.returncode)["msg"], "err")
                 else: say(work, "خلص Claude من الطلب.", "done")
             except Exception as e: say(work, "تعذّر تشغيل Claude: " + str(e)[:200], "err")
+            finally: AG.update(running=False, proc=None)
+        threading.Thread(target=go, daemon=True).start(); return True, ""
+
+    def agent_run_codex(exe, task, label, at=None):
+        """4.61: نفس زر «نفّذ» مع Codex (حساب ChatGPT): تعليمات AGENT.md داخل الطلب، وخطواته تطلع بالسجل من --json."""
+        guide = open(os.path.join(HERE, "AGENT.md"), encoding="utf-8").read()
+        full = ("%s\n\n(أنت Codex: اللي مكتوب «Claude» بالتعليمات فوق يقصدك.)\n\nمجلد المشروع: %s\nمجلد الاستوديو (hs.py): %s\nمجلد المحرّك: %s\nمفسّر بايثون: %s\n\nالمطلوب:\n%s\n" % (guide, work, HERE, eng, PY, task))
+        cmd = codex_exec_argv(exe, work, cx_dirs(eng), js=True)
+        AG.update(running=True, started=time.time()); say(work, label, "ask", at)
+        try: snap_id = snapshot(work, "قبل: " + label[:80])
+        except Exception: snap_id = None
+        cid = cmd_log_add(work, label, task, snap_id)
+        def go():
+            err = ""; done = False; plain = []
+            try:
+                kw = {"creationflags": 0x08000000} if os.name == "nt" else {}
+                p = subprocess.Popen(cmd, cwd=work, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw); AG["proc"] = p
+                p.stdin.write(full.encode("utf-8")); p.stdin.close()
+                for raw in p.stdout:
+                    try: ev = json.loads(raw.decode("utf-8", "replace"))
+                    except Exception: ev = None
+                    if not isinstance(ev, dict): plain = (plain + [raw.decode("utf-8", "replace")])[-30:]; continue
+                    ty = ev.get("type") or ""; it = ev.get("item") if isinstance(ev.get("item"), dict) else {}; k = it.get("type") or it.get("item_type") or ""
+                    if ty == "item.completed" and k in ("agent_message", "assistant_message") and str(it.get("text") or "").strip(): say(work, str(it["text"]).strip(), "claude")
+                    elif ty == "item.started" and k == "command_execution":
+                        c = it.get("command"); say(work, "Bash: " + (" ".join(map(str, c)) if isinstance(c, list) else str(c or ""))[:160], "tool")
+                    elif ty == "item.completed" and k == "file_change": say(work, "Edit: " + ", ".join(os.path.basename(str(x.get("path") or "")) for x in (it.get("changes") or [])[:4] if isinstance(x, dict)), "tool")
+                    elif ty == "item.started" and k == "web_search": say(work, "WebSearch: " + str(it.get("query") or "")[:160], "tool")
+                    elif ty == "item.started" and k == "mcp_tool_call": say(work, "%s: %s" % (it.get("server") or "mcp", it.get("tool") or ""), "tool")
+                    elif ty == "turn.failed": err = str((ev.get("error") or {}).get("message") or "Codex وقف")
+                    elif ty == "error": err = str(ev.get("message") or "")
+                    elif ty == "turn.completed": done = True
+                p.wait(); bad = not done and (bool(err) or p.returncode not in (0, None))
+                cmd_log_set(cid, status="err" if bad else "done", result=err[:800])
+                if bad: say(work, codex_why(err + "\n" + "".join(plain), p.returncode)["msg"], "err")
+                else: say(work, "خلص Codex من الطلب.", "done")
+            except Exception as e: say(work, "تعذّر تشغيل Codex: " + str(e)[:200], "err")
             finally: AG.update(running=False, proc=None)
         threading.Thread(target=go, daemon=True).start(); return True, ""
 
@@ -5886,7 +8124,7 @@ def serve(work, port, engine):
             ex = exports(); return ("/hs/export/" + ex[0]) if ex else ("/ad-master.mp4" if os.path.exists(P("ad-master.mp4")) else None)
         def do_GET(self):
             u = urllib.parse.urlparse(self.path); p = u.path; q = self._q(); role = self._role()
-            self._cache = bool(q.get("v")) and (p.startswith("/vfr/") or p.startswith("/hs/th/") or p.startswith("/hs/pv/") or p.startswith("/bt/") or p in ("/hs/qr.js", "/hs/app.js", "/hs/i18n.js"))
+            self._cache = bool(q.get("v")) and (p.startswith("/vfr/") or p.startswith("/hs/th/") or p.startswith("/hs/pv/") or p.startswith("/hs/apv/") or p.startswith("/bt/") or p in ("/hs/qr.js", "/hs/app.js", "/hs/i18n.js"))
             if not role: return self._deny()
             ck = self.headers.get("Cookie") or ""
             for key, val, name in (("k", TOKEN, "hs_k"), ("r", RTOKEN, "hs_r")):
@@ -5926,10 +8164,21 @@ def serve(work, port, engine):
                 return self._json(200, {"ok": True, "has": bool(Dd), "lang": Dd.get("lang"), "name": DUB_LANGS.get(Dd.get("lang") or "", ""), "n": len(segs), "tr": sum(1 for x in segs if x.get("tr")), "aud": sum(1 for x in segs if x.get("file")), "track": bool(Dd.get("track")),
                                         "on": dub_on(work), "want": hs_of(load_studio(work)).get("dubWant") or "", "script": txt})
             if p == "/hs/vpos_info": return self._json(200, vpos_info(work))   # 4.27
+            if p == "/hs/blur_th":   # 4.69: صورة كل وجه لقائمة الطمس
+                try: f_ = fb_thumb(work, int((q.get("id") or ["0"])[0]))
+                except Exception: f_ = None
+                if not f_: return self._json(404, {"ok": False})
+                b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
             if p == "/hs/vpos_thumb":
                 try: f_ = vpos_thumb(work, float((q.get("t") or ["0"])[0]))
                 except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
                 b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
+            if p == "/hs-wave.js":   # 4.57: موجة صوتك (تنحسب من جديد لو تغيّر صوت المقطع)
+                if wave_of(hs_of(load_studio(work))).get("on") or os.path.exists(P("hs-wave.js")):
+                    try: wave_build(work)
+                    except Exception as e: base.log("wave: " + str(e)[:160])
+                b_ = open(P("hs-wave.js"), "rb").read() if os.path.exists(P("hs-wave.js")) else b"window.__hsWave=null;"
+                self.send_response(200); self.send_header("Content-Type", "application/javascript; charset=utf-8"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
             if p == "/hs/hdr_info":   # 4.41: ألوان HDR
                 return self._json(200, {"ok": True, **hdr_info(work)})
             if p == "/hs/mfit.wav":   # 4.45: تسمع الموسيقى المفصّلة
@@ -5960,9 +8209,12 @@ def serve(work, port, engine):
                 except Exception as e: return self._json(500, {"ok": False, "msg": str(e)[:200]})
                 b_ = open(f_, "rb").read(); self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(b_))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b_); return
             if p == "/hs/info":
-                return self._json(200, {"version": VERSION, "vmap": media_map(work)[1], "vsig": vsig(work), "token": TOKEN, "lan": "http://%s:%d/?k=%s" % (LAN, port, TOKEN), "lanM": "http://%s:%d/m?k=%s" % (LAN, port, TOKEN), "review": "http://%s:%d/review?r=%s" % (LAN, port, RTOKEN),
+                if not base.JOB["running"]:
+                    try: angle_ensure(work, None, bg=True)   # 4.58: القص تغيّر؟ فريمات الزاوية الثانية تنبني من جديد بالخلفية
+                    except Exception: pass
+                return self._json(200, {"canvas": list(canvas_of(work)), "version": VERSION, "vmap": media_map(work)[1], "vsig": vsig(work), "token": TOKEN, "lan": "http://%s:%d/?k=%s" % (LAN, port, TOKEN), "lanM": "http://%s:%d/m?k=%s" % (LAN, port, TOKEN), "review": "http://%s:%d/review?r=%s" % (LAN, port, RTOKEN),
                                         "work": work, "name": os.path.basename(work.rstrip("/\\")), "thumbsDone": BG["thumbsDone"], "versions": versions(), "exports": exports(), "exportMt": export_mt(), "hub": hub_url(), "title": (hs_of(load_studio(work)).get("title") or (hs_of(load_studio(work)).get("pod") or {}).get("title") or (hs_of(load_studio(work)).get("dahih") or {}).get("title") or ""),
-                                        "brands": sorted(os.path.splitext(f)[0] for f in os.listdir(brand_dir())), "local": self._local(), "claude": bool(find_claude() or shutil.which("opencode")), "agent": "claude" if find_claude() else ("opencode" if shutil.which("opencode") else ""), "notify": bool(notify_cfg().get("on")), "tokenAsk": token_ask(), "gen": gen_view(gen_list(work)), "safe": safe_of((load_studio(work).get("hs") or {}).get("platforms"), *frame_of(load_studio(work).get("hs") or {})), "platforms": {k: {"safe": v["safe"], "frames": v["frames"], "best": v["best"], "max": v["max"]} for k, v in PLATFORMS.items()},
+                                        "brands": sorted(os.path.splitext(f)[0] for f in os.listdir(brand_dir())), "local": self._local(), "claude": bool(agent_pick()[1]), "agent": agent_pick()[0], "notify": bool(notify_cfg().get("on")), "tokenAsk": token_ask(), "gen": gen_view(gen_list(work)), "safe": safe_of((load_studio(work).get("hs") or {}).get("platforms"), *frame_of(load_studio(work).get("hs") or {})), "platforms": {k: {"safe": v["safe"], "frames": v["frames"], "best": v["best"], "max": v["max"]} for k, v in PLATFORMS.items()},
                                         "assets": sorted(f for f in os.listdir(P("assets")) if os.path.splitext(f)[1].lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg")) if os.path.isdir(P("assets")) else [], "seams": keep_seams(work), "ins": (rj(P("cut.json"), {}) or {}).get("insr") or [], "pend": (rj(P("cut.json"), {}) or {}).get("pend"), "apis": [x.get("name") for x in conn_load().get("apis") or [] if x.get("kind", "image") == "image"], "looks": looks_all(), "beats": rj(P("beats.json")), "music": os.path.basename(music_file(work) or ""), "sv": sv_info(work),
                                         "post": open(P("post.txt"), encoding="utf-8").read() if os.path.exists(P("post.txt")) else "", "ready": ready(work),
                                         "finals": [f for f in sorted(os.listdir(work)) if re.match(r"ad-(master|clean|hook-\d+|\d+x\d+)\.mp4$", f)]})
@@ -6020,6 +8272,12 @@ def serve(work, port, engine):
                     except Exception: g = False
                     tl.append({"name": name, "why": why, "src": src, "ok": g})
                 return self._json(200, {"tools": tl, "net": NET_USE})
+            if p.startswith("/hs/apv/"):      # 4.58: فريم الزاوية الثانية للمعاينة (540 عرض، ينبني أول ما ينطلب)
+                n = max(1, int(re.sub(r"\D", "", p) or 1)); f = os.path.join(D, "apv", "%05d.jpg" % n)
+                if n == 1 or not os.path.exists(f): angle_ensure(work, None, bg=True)
+                for f_ in (f, P("angle", "%05d.jpg" % n), P("vfr", "%05d.jpg" % n)):
+                    if os.path.exists(f_): return self._file(f_, "image/jpeg")
+                return self.send_error(404)
             if p.startswith("/hs/pv/"):       # فريم معاينة مصغّر (540 عرض): أخف 4 مرات من الأصلي، والتصدير ما يستخدمه
                 n = max(1, int(re.sub(r"\D", "", p) or 1)); src = P("vfr", "%05d.jpg" % n); f = os.path.join(D, "pv", "%05d.jpg" % n)
                 if not os.path.exists(src): return self.send_error(404)
@@ -6067,6 +8325,13 @@ def serve(work, port, engine):
                 try:
                     d_ = json.loads(raw_ or b"{}")
                     if d_.get("caps"): gloss_learn(rj(P("caps.json"), None), d_["caps"])
+                    h_ = (d_.get("studio") or {}).get("hs") if isinstance(d_.get("studio"), dict) else None
+                    if isinstance(h_, dict):   # 4.58: بيانات الزاوية الثانية يكتبها السيرفر (التزامن والفريمات): الصفحة تغيّر مكانها بالكادر بس
+                        A0_ = hs_of(load_studio(work)).get("angle"); A1_ = h_.get("angle")
+                        if A0_ or A1_:
+                            if not A0_: h_.pop("angle", None)
+                            else: h_["angle"] = {**A0_, **{k_: A1_[k_] for k_ in ("x", "y", "z") if isinstance(A1_, dict) and A1_.get(k_) is not None}}
+                            raw_ = json.dumps(d_, ensure_ascii=False).encode("utf-8"); del self.headers["Content-Length"]; self.headers["Content-Length"] = str(len(raw_))
                 except Exception: pass
                 import io as _io; self.rfile = _io.BytesIO(raw_); return super().do_POST()
             if not (p.startswith("/hs/") or p.startswith("/api/recut") or p.startswith("/api/drop") or p.startswith("/api/undo_cut") or p.startswith("/api/render")):
@@ -6190,6 +8455,17 @@ def serve(work, port, engine):
                         task = ("شيل خلفية الصورة %s بمشروع \"%s\". جرّب أول: python hs.py rmbg \"%s\" \"%s\" . لو قال ما قدر (خلفية معقدة ومو شخص): استخدم أداة شيل الخلفية من حساب المستخدم (Higgsfield remove_background، أو Canva remove-background) وقل له قبلها إنها تستهلك من رصيده، "
                                 "واحفظ الناتج PNG بمجلد assets باسم الصورة-nobg.png، وبعدها غيّر src بالطبقة اللي تستخدمها لهذا الملف بـ studio.json (وخلّ srcOrig بالأصل).") % (src_, work, work, src_)
                         ok, msg = agent_run(task, "Claude يشيل الخلفية"); return self._json(200, {"ok": ok, "msg": msg})
+                    if what == "board":   # 4.70: السبورة: Claude يختار لحظات الشرح ويرسمها على كلامه
+                        note_ = str(data.get("text") or "").strip()
+                        task = ("حط شرح بالسبورة (board) على هالمقطع. المشروع: %s\n"
+                                "1) اقرأ المرجع كامل قبل أي شي: %s\n"
+                                "2) شوف كلامه بتوقيته: python \"%s\" text \"%s\" show\n"
+                                "3) اختر من 2 إلى 5 لحظات يشرح فيها فكرة تحتاج توضيح (مفهوم، رقم، مقارنة، خطوات، سبب ونتيجة). لا تحط سبورة على الهوك (أول 3 ثواني) ولا على الختام والدعوة.\n"
+                                "4) لكل لحظة اكتب سبورة بالشكل اللي بالمرجع: مشاهدها على توقيت كلامه بالضبط، نص قصير من كلامه هو، شخصيات وأمثلة تناسب جمهوره، والمعلومة صحيحة. ولا شي يغطي على شي ولا على الكابشن.\n"
+                                "5) احفظها بملف JSON (قائمة) وشغّل: python \"%s\" board \"%s\" add <الملف>. بعدها: python \"%s\" board \"%s\" check وصلّح كل تنبيه لين يقول سليمة.\n"
+                                "6) طلّع معاينة لكل سبورة (node \"%s\" \"%s\" preview <ثانية> <ثانية>، والصور تطلع في prev/) وشوفها بعينك، وعدّل لو شي مو واضح.\n"
+                                "لا تغيّر كلامه ولا القص ولا الكابشن.%s") % (work, os.path.join(eng, "references", "board.md"), os.path.abspath(__file__), work, os.path.abspath(__file__), work, os.path.abspath(__file__), work, os.path.join(eng, "scripts", "04_render_frames.js"), work, ("\nملاحظته: " + note_) if note_ else "")
+                        ok, msg = agent_run(task, "المساعد يرسم الشرح بالسبورة"); return self._json(200, {"ok": ok, "msg": msg})
                     if what == "build":   # 4.47: البناء: Claude يبني المقطع من الخطة (مو قوائم تختار منها)
                         task = ("ابنِ المقطع بمجلد %s من خطته plan.json. أول شي: python hs.py plan \"%s\" build (يحط الصور بحركتها). "
                                 "بعدها لكل بند بالخطة طبّق اللي بـ show وmotion بطبقات حقيقية (hs layer add …): موشن جاهز (type=mg) للأرقام والقوائم والمقارنات، نص يطلع مع الكلمة، تعليقات على الصور، وانتقالات، "
@@ -6209,7 +8485,7 @@ def serve(work, port, engine):
                                 '{"summary": "سطر واحد: كم كلمة صححت ووش نوعها، وكم سؤال عندك", "fixes": [{"id": "f1", "card": رقم الجملة, "from": "الكلمة أو الكلمات الغلط كما هي مكتوبة بالجملة", "to": "الصح", "why": "السبب بكلمات قليلة"}], '
                                 '"asks": [{"id": "q1", "cards": [أرقام الجمل اللي فيها نفس الشي], "from": "الكلمات كما هي مكتوبة", "q": "سؤال قصير", "opts": ["الأرجح", "خيار ثاني", "المكتوب كما هو"], "note": "اختياري: تكررت كم مرة"}]}\n'
                                 "fixes = اللي متأكد منه من سياق الكلام (سماع غلط، اسم مكتوب غلط، كلمة انكتبت فصحى وهو قالها بلهجته). asks = اللي ما تقدر تحسمه: سؤال وخيارات، أولها الأرجح وآخرها يبقي المكتوب كما هو.\n"
-                                "from لازم يكون كلمات موجودة بالجملة بالضبط. لا تغيّر أسلوبه ولا لهجته ولا ترتيب كلامه، ولا تصحح نحو. حد أقصى 30 تصحيح و8 أسئلة. لو كل شي صح اكتب fixes وasks فاضية.") % (work, work, hsp_, work)
+                                "from لازم يكون كلمات موجودة بالجملة بالضبط. الكابشن نسخة حرفية من كلامه: لا تزيد كلمة ما قالها، ولا تشيل كلمة قالها، ولا تبدّل كلمة بمرادفها، ولا تحوّل لهجته لفصحى. لو الكلمة المكتوبة ممكن تكون صح ولو باحتمال ضعيف حطها سؤال (asks) مو تصحيح. لا تغيّر أسلوبه ولا لهجته ولا ترتيب كلامه، ولا تصحح نحو. حد أقصى 30 تصحيح و8 أسئلة. لو كل شي صح اكتب fixes وasks فاضية.") % (work, work, hsp_, work)
                         ok, msg = agent_run(task, "المساعد يراجع الكابشن"); return self._json(200, {"ok": ok, "msg": msg})
                     if what in ("planimg", "plangen", "planw"):   # 4.43: الخطة كخطوة
                         pl_ = plan_load(work) or {}; ids_ = [str(x) for x in data.get("ids") or []]
@@ -6341,6 +8617,13 @@ def serve(work, port, engine):
                     wj(J(work, "studio.json"), st_)
                     def go(): vfr_extract(work, base.log); base.JOB["reload"] = True
                     ok = base.job("fix", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                if p == "/hs/canvas":   # 4.60: عمودي أو عرضي (يوتيوب)
+                    ar_ = str(data.get("ar") or "")
+                    if ar_ not in CANVAS: return self._json(400, {"ok": False, "msg": "المقاس: 9:16 أو 16:9"})
+                    if base.JOB["running"]: return self._json(409, {"ok": False, "msg": "فيه عملية شغالة"})
+                    canvas_set(work, ar_)
+                    def go(): patch(work, quiet=True); rebuild_video(work, S, base.log); base.JOB["reload"] = True
+                    ok = base.job("canvas", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
                 if p == "/hs/slowmo":   # 4.45: حركة بطيئة لجزء
                     try: a_ = (float(data["s"]), float(data["e"]), float(data.get("r") or 0.5))
                     except (KeyError, TypeError, ValueError): return self._json(400, {"ok": False, "msg": "حدد الجزء"})
@@ -6355,6 +8638,59 @@ def serve(work, port, engine):
                     try: L_ = scene_cuts(work, float(data.get("thr") or 0.32))
                     except Exception as e: return self._json(200, {"ok": False, "msg": str(e)[:200]})
                     return self._json(200, {"ok": True, "cuts": L_})
+                if p == "/hs/angle":   # 4.58: الزاوية الثانية
+                    act = str(data.get("act") or "status")
+                    if act in ("add", "sync", "frame"):
+                        if act == "add":
+                            src_ = str(data.get("src") or ""); fp_ = os.path.normpath(P(src_)) if src_ else ""
+                            if not src_ or not fp_.startswith(os.path.normpath(work)) or not os.path.isfile(fp_): return self._json(400, {"ok": False, "msg": "ما لقيت الملف"})
+                        if act == "frame":
+                            st_ = load_studio(work); A_ = hs_of(st_).get("angle")
+                            if not A_: return self._json(200, {"ok": False, "msg": "ما فيه زاوية ثانية"})
+                            for k_, lo_, hi_ in (("x", 0, 1), ("y", 0, 1), ("z", 1, 3)):
+                                if data.get(k_) is not None: A_[k_] = round(max(lo_, min(hi_, float(data[k_]))), 3)
+                            wj(P("studio.json"), st_)
+                        def go():
+                            if act == "add":
+                                r_ = angle_add(work, fp_, base.log)
+                                if r_.get("ok") and not angle_layers(hs_of(load_studio(work))): angle_auto_best(work, base.log)
+                            elif act == "sync": angle_resync(work, base.log, data.get("off"))
+                            else: angle_build(work, base.log)
+                            base.JOB["reload"] = True
+                        ok = base.job("angle", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                    if act == "auto": rs_ = angle_auto(work, data.get("hold")); return self._json(200, {**angle_view(work), "made": len(rs_)})
+                    if act == "speaker":   # 4.65: حسب المتكلم
+                        sw_ = data.get("swap"); r_ = angle_speaker(work, None if sw_ is None else bool(sw_), data.get("hold"))
+                        if not r_.get("ok"): return self._json(200, {"ok": False, "msg": r_.get("msg") or "", "gap": r_.get("gap")})
+                        r_.pop("rs", None); return self._json(200, {**angle_view(work), **r_})
+                    if act == "mic":   # 4.66: صوت كل واحد من جواله
+                        r_ = mic_set(work, bool(data.get("on", True)), base.log)
+                        if not r_.get("ok"): return self._json(200, {"ok": False, "msg": r_.get("msg") or "", "gap": r_.get("gap")})
+                        return self._json(200, {**angle_view(work), **r_, "ok": True})
+                    if act == "remove":
+                        st_ = load_studio(work); h_ = hs_of(st_); h_.pop("angle", None); h_["layers"] = [L for L in h_.get("layers") or [] if L.get("type") != "angle"]; wj(P("studio.json"), st_)
+                    return self._json(200, angle_view(work))
+                if p == "/hs/blur":   # 4.69: طمس الوجوه (الفحص بالخلفية لأنه ياخذ ثواني)
+                    act = data.get("act") or "state"
+                    if act == "scan":
+                        def go():
+                            r_ = fb_scan(work, base.log)
+                            if not r_.get("ok"): raise RuntimeError(r_.get("msg") or "ما قدرت أفحص الوجوه")
+                            base.log("لقيت " + fb_n(len(r_["faces"])))
+                        ok = base.job("blur", go); return self._json(200 if ok else 409, {"ok": ok, "msg": "" if ok else "فيه عملية شغالة"})
+                    try: return self._json(200, fb_view(work))
+                    except Exception as e: return self._json(200, {"ok": False, "msg": str(e)[:200]})
+                if p == "/hs/color":   # 4.64: تصحيح الألوان التلقائي (يقيس كل لقطة ويصلحها)
+                    try:
+                        act = data.get("act") or "auto"
+                        if act == "scan": return self._json(200, {"ok": True, "clips": color_scan(work)})
+                        if act == "clear":
+                            st_ = load_studio(work); h_ = hs_of(st_); h_.pop("cc", None); h_.pop("ccs", None); wj(J(work, "studio.json"), st_); return self._json(200, {"ok": True})
+                        return self._json(200, color_auto(work))
+                    except Exception as e: return self._json(200, {"ok": False, "msg": str(e)[:200]})
+                if p == "/hs/wave":   # 4.57: يحسب موجة صوتك (ثانية تقريباً لكل دقيقة)
+                    try: return self._json(200, wave_build(work, force=bool(data.get("force"))))
+                    except Exception as e: return self._json(200, {"ok": False, "msg": str(e)[:200]})
                 if p == "/hs/hdr":   # 4.41: ألوان HDR (يطلّع الفريمات من جديد بالألوان الصح)
                     lv = data.get("level") if data.get("level") in HDR_LEVELS else "auto"
                     st_ = load_studio(work); hs_of(st_)["hdr"] = {"level": lv}; wj(J(work, "studio.json"), st_)
@@ -6402,7 +8738,7 @@ def serve(work, port, engine):
                     lid, name = media_add(work, data["item"], data.get("at"), data.get("dur", 3), data.get("fit", "card")); return self._json(200, {"ok": True, "id": lid, "file": name})
                 if p == "/hs/shot":
                     lid, name = shot_add(work, str(data.get("url", "")).strip(), data.get("at"), data.get("dur", 4), log=lambda *_: None); return self._json(200, {"ok": True, "id": lid, "file": name})
-                if p == "/hs/auto": return self._json(200, {"ok": True, "n": auto_layers(work, data["kind"], bool(data.get("on", True)))})
+                if p == "/hs/auto": return self._json(200, {"ok": True, "n": auto_layers(work, data["kind"], bool(data.get("on", True)), data.get("opts") if isinstance(data.get("opts"), dict) else None)})
                 if p == "/hs/gen":
                     kind = data.get("kind"); prompt = str(data.get("prompt", "")).strip()
                     if not prompt: return self._json(400, {"ok": False, "msg": "اكتب وصف المطلوب"})
@@ -6469,10 +8805,10 @@ def serve(work, port, engine):
                     for pr in list(KIDS):
                         if pr.poll() is None and pr is not AG.get("proc"): kill_tree(pr); n += 1
                     return self._json(200, {"ok": True, "n": n})
-                if p == "/hs/claude_auth": return self._json(200, claude_auth(bool(data.get("fresh"))))   # 4.51: ربط Claude من المساعد
+                if p == "/hs/claude_auth": return self._json(200, (codex_auth if agent_pick()[0] == "codex" else claude_auth)(bool(data.get("fresh"))))   # 4.51، 4.61: حالة المساعد اللي اخترته
                 if p == "/hs/claude_term":
                     if not self._local(): return self._json(403, {"ok": False, "msg": "من جهازك بس"})
-                    ok, msg = claude_term("install" if data.get("kind") == "install" else "login"); return self._json(200, {"ok": ok, "msg": msg})
+                    ok, msg = (codex_term if agent_pick()[0] == "codex" else claude_term)("install" if data.get("kind") == "install" else "login"); return self._json(200, {"ok": ok, "msg": msg})
                 if p == "/hs/agent_stop":
                     pr = AG.get("proc")
                     if pr: kill_tree(pr)
@@ -6900,8 +9236,9 @@ def clips_cfg(d): return rj(J(d, "clips.json"), {}) or {}
 def probe_dur(path):
     try: return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], capture_output=True, text=True).stdout.strip() or 0)
     except Exception: return 0.0
+WHISPER_SAFE = ["--condition_on_previous_text", "False", "--hallucination_silence_threshold", "2"]   # 4.70: ما يكرر جملة ولا يخترع كلام على السكتات
 def whisper_run(wav, outdir, model="medium", lang=None, logf=None):
-    cmd = [PY, "-m", "whisper", wav, "--model", model, "--word_timestamps", "True", "--output_format", "json", "--output_dir", outdir, "--fp16", "False", "--verbose", "False"]
+    cmd = [PY, "-m", "whisper", wav, "--model", model, "--word_timestamps", "True", "--output_format", "json", "--output_dir", outdir, "--fp16", "False", "--verbose", "False"] + WHISPER_SAFE   # 4.70
     if lang: cmd += ["--language", lang]
     with open(logf or os.devnull, "w") as lg: r = subprocess.run(cmd, stdout=lg, stderr=subprocess.STDOUT)
     out = J(outdir, os.path.splitext(os.path.basename(wav))[0] + ".json")
@@ -6956,8 +9293,8 @@ def clip_bounds(A, a_, b_, src_dur=None, back=6.0, ahead=8.0):
             break
     try:   # 4.32: يكمل لين آخر الفكرة، ويبدأ من أولها
         for t0, t1 in thoughts(segs):
-            if segs[t0]["start"] - 0.2 <= a_ <= segs[t1]["end"] and a_ - segs[t0]["start"] <= 15: a_ = max(0.0, min(a_, segs[t0]["start"] - 0.12))
-            if segs[t0]["start"] <= b_ - 0.3 and b_ <= segs[t1]["end"] + 0.05 and segs[t1]["end"] - b_ <= 45: b_ = max(b_, segs[t1]["end"] + 0.3)
+            if segs[t0]["start"] - 0.2 <= a_ <= segs[t1]["end"] and a_ - segs[t0]["start"] <= 6: a_ = max(0.0, min(a_, segs[t0]["start"] - 0.12))   # 4.70: كان 15 والهوك يطلع من أول 3 ث
+            if segs[t0]["start"] <= b_ - 0.3 and b_ <= segs[t1]["end"] + 0.05 and segs[t1]["end"] - b_ <= 20: b_ = max(b_, segs[t1]["end"] + 0.3)   # 4.70: كان 45
     except Exception: pass
     if src_dur: b_ = min(b_, src_dur)
     return round(a_, 3), round(b_, 3)
@@ -7018,7 +9355,7 @@ def clip_make(d, a_, b_, title="", credit="", name=None, style=None):
     return w
 
 # ── ترشيح اللقطات: تقدير «كم تضرب» من النص والصوت (بدون إنترنت). Claude يراجعه ويعدّله بـ clips cand ──
-HOOK_W = ("ليش ليه كيف شلون وش ايش إيش هل سر أسرار اسرار أكبر اكبر أخطر اخطر أهم اهم أسوأ اسوأ أفضل افضل غلط خطأ غلطة الحقيقة حقيقة محد مستحيل انتبه تخيل تخيّل صدمة فلوس مليون ملايين ريال دولار نصيحة قصة فشلت فشل نجحت نجاح تجربتي المشكلة السبب ترى والله للأسف أبدا أبداً ابدا "
+HOOK_W = ("ليش ليه كيف شلون وش ايش إيش هل سر أسرار اسرار أكبر اكبر أخطر اخطر أهم اهم أسوأ اسوأ أفضل افضل غلط خطأ غلطة الحقيقة حقيقة محد مستحيل انتبه تخيل تخيّل صدمة فلوس مليون ملايين ريال دولار نصيحة قصة فشلت فشل نجحت نجاح تجربتي المشكلة السبب للأسف أبدا أبداً ابدا "
           "why how what secret biggest worst best mistake truth never nobody stop million money dollars imagine crazy insane story failed problem reason honestly actually wrong rich broke").split()
 HOOK_P = ("لا تسوي", "لا تسوّي", "ما أحد", "ما احد", "أول مرة", "اول مرة", "آخر مرة", "كل يوم", "لو تبي", "أقول لك", "اقول لك", "the problem", "here's", "you need", "you should", "don't", "the reason", "no one", "nobody tells")
 WEAK_START = set("و ف بس لكن يعني اللي هذا هذي فهذا وهذا وبعدين وبعدها فبعدين and but so because or which that then it he she they also".split())
@@ -7251,6 +9588,8 @@ def prep(work, model=None, lang=None, keep_silence=False, log=print):
         if not os.path.isdir(vf) or not os.listdir(vf):
             vfr_extract(work, lambda *a: None)
         if not os.path.isfile(J(work, "compose.html")): shutil.copy(os.path.join(S, "compose.REFERENCE.html"), J(work, "compose.html"))
+        try: patch(work, quiet=True)   # 4.60: مقاس اللوحة (عمودي أو عرضي)
+        except Exception: pass
         try: notes_auto(work)   # 4.29: ملاحظات «لازم تعدّلها» (كلمة ما وضحت، كابشن سريع)
         except Exception: pass
         try:   # 4.28: الطبقات اللي انحطت قبل قص السكتات (اسم المتكلم مثلاً) ما تطول عن المقطع
@@ -7428,7 +9767,7 @@ def claude_learn():
             if b in ("claude", "claude.exe") and (p == saved or _is_claude_cli(p)): v = p; break
     if v: claude_remember(v, "session"); _CL.update(t=0)
     return v
-def have_claude(): return bool(find_claude())
+def have_claude(): return agent_pick()[0] in AGENTS   # 4.61: Claude أو Codex (اللي اخترته بالإعدادات)
 AR_RESET = {"am": "ص", "pm": "م"}
 def claude_why(txt, rc=None):
     """يقرأ آخر كلام Claude ويقول ليش وقف بكلام واضح."""
@@ -7541,6 +9880,184 @@ def claude_term(kind):
             subprocess.Popen([tm, "-e", "bash", "-lc", nix + "; exec bash"])
     except Exception as e: return False, "ما قدرت أفتح النافذة: %s. افتح الطرفية واكتب: %s" % (str(e)[:120], nix)
     return True, ""
+# ══════════ 4.61: ربط Codex من الإعدادات: السكل يشتغل من Codex بحساب ChatGPT، وأزرار المساعد تقدر تشتغل عليه بدل Claude ══════════
+AGENTS = ("claude", "codex")
+_CX = {"t": 0, "v": None}; _CXA = {"t": 0, "v": None}
+def codex_cfg_path(): return os.path.join(HOME_CFG, "codex.json")
+def codex_cfg(): return rj(codex_cfg_path(), {}) or {}
+def codex_home(): return os.path.normpath(os.environ.get("CODEX_HOME") or J(os.path.expanduser("~"), ".codex"))
+def codex_skill_dir(): return J(codex_home(), "skills", "hojas-studio")
+def _cx_spots():
+    h = os.path.expanduser("~")
+    if os.name == "nt":
+        A = os.environ.get("APPDATA") or J(h, "AppData", "Roaming"); L = os.environ.get("LOCALAPPDATA") or J(h, "AppData", "Local")
+        return [J(A, "npm", "codex.cmd"), J(codex_home(), ".sandbox-bin", "codex.exe"), J(L, "Microsoft", "WinGet", "Links", "codex.exe"), J(h, "scoop", "shims", "codex.exe"), J(L, "pnpm", "codex.cmd"), J(h, ".bun", "bin", "codex.exe")]
+    s = [J(h, ".local", "bin", "codex"), "/opt/homebrew/bin/codex", "/usr/local/bin/codex", J(h, ".npm-global", "bin", "codex"), J(h, ".bun", "bin", "codex"), "/Applications/Codex.app/Contents/Resources/codex"]
+    return s + sorted(glob.glob(J(h, ".nvm", "versions", "node", "*", "bin", "codex")))[-1:]
+def find_codex(fresh=False):
+    """مسار Codex: PATH ← PATH الجديد من الريجستري ← آخر مسار نجح ← الأماكن المعروفة (تطبيق Codex يحط نسخة في ~/.codex/.sandbox-bin)."""
+    if os.environ.get("HS_NO_CODEX"): return None
+    if not fresh and time.time() - _CX["t"] < 30: return _CX["v"]
+    e = os.environ.get("HS_CODEX") or ""; v = e if os.path.isfile(e) else None
+    v = v or shutil.which("codex")
+    if not v and os.name == "nt":
+        wp = _win_path(); v = shutil.which("codex", path=wp) if wp else None
+    saved = codex_cfg().get("path")
+    if not v and saved and os.path.isfile(saved): v = saved
+    if not v: v = next((p for p in _cx_spots() if os.path.isfile(p)), None)
+    if v and v != saved:
+        try: c = codex_cfg(); c["path"] = v; os.makedirs(HOME_CFG, exist_ok=True); wj(codex_cfg_path(), c)
+        except Exception: pass
+    _CX.update(t=time.time(), v=v); return v
+def _cx_argv(exe, args): return (["cmd", "/c"] if exe.lower().endswith((".cmd", ".bat")) else []) + [exe] + list(args)
+def _cx_run(exe, args, timeout=30, inp=None, cwd=None):
+    kw = {"creationflags": 0x08000000} if os.name == "nt" else {}
+    if inp is None: kw["stdin"] = subprocess.DEVNULL
+    try:
+        r = subprocess.run(_cx_argv(exe, args), input=inp, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, cwd=cwd, **kw)
+        return r.returncode, (r.stdout or "") + (r.stderr or "")
+    except subprocess.TimeoutExpired: return -1, "timed out"
+    except Exception as e: return None, str(e)[:200]
+def agent_pref(): a = hub_cfg().get("agent"); return a if a in AGENTS else "claude"
+def agent_pick():
+    """مين يشغّل أزرار المساعد: اللي اخترته بالإعدادات لو موجود، وإلا Claude، وإلا Codex لو ربطته، وإلا OpenCode."""
+    pref = agent_pref(); cx = find_codex() if (pref == "codex" or codex_cfg().get("linked")) else None
+    if pref == "codex" and cx: return "codex", cx
+    cl = find_claude()
+    if cl: return "claude", cl
+    if cx: return "codex", cx
+    oc = shutil.which("opencode"); return ("opencode", oc) if oc else ("", None)
+def agent_name(k): return {"codex": "Codex", "opencode": "OpenCode"}.get(k, "Claude")
+def codex_why(txt, rc=None):
+    if re.search(r"codex login|not (logged|signed) in|sign in again|refresh token|unauthori[sz]ed|\b401\b", str(txt or "").lower()):
+        return {"why": "login", "msg": "انتهى تسجيل دخولك في Codex. اضغط «سجّل دخولك» بالإعدادات وكمّل بحساب ChatGPT، وبعدها أعد طلبك."}
+    w = claude_why(txt, rc); w["msg"] = w["msg"].replace("Claude", "Codex"); return w
+def cx_dirs(eng=None):
+    """المجلدات اللي Codex يقدر يكتب فيها غير المشروع: السكل والمحرّك وإعدادات المكتبة وكاش النماذج والمؤقت."""
+    L = []
+    for d in (HERE, eng, HOME_CFG, J(os.path.expanduser("~"), ".cache"), tempfile.gettempdir()):
+        if d and os.path.isdir(d) and os.path.normcase(os.path.abspath(d)) not in [os.path.normcase(os.path.abspath(x)) for x in L]: L.append(d)
+    return L
+def codex_exec_argv(exe, work, dirs=(), js=False):
+    """codex exec بدون أسئلة: يكتب داخل المشروع والمجلدات اللي نعطيه بس (workspace-write) ومعه نت. الطلب يوصله من stdin."""
+    a = ["exec", "--skip-git-repo-check", "--color", "never", "-C", work, "-s", "workspace-write", "-c", "approval_policy=never", "-c", "sandbox_workspace_write.network_access=true"]
+    for d in dirs:
+        if d and os.path.normcase(os.path.abspath(d)) != os.path.normcase(os.path.abspath(work)): a += ["--add-dir", d]
+    return _cx_argv(exe, a + (["--json"] if js else []) + ["-"])
+def codex_once(prompt, timeout=180):
+    """سؤال واحد لـ Codex بدون ما يلمس الملفات (read-only)، ونرجع آخر رد."""
+    exe = find_codex()
+    if not exe: return False, "ما لقيت Codex على الجهاز"
+    os.makedirs(HOME_CFG, exist_ok=True); fd, of = tempfile.mkstemp(suffix=".txt", prefix="hs-cx-"); os.close(fd)
+    rc, txt = _cx_run(exe, ["exec", "--skip-git-repo-check", "--ephemeral", "--color", "never", "-s", "read-only", "-o", of, "-"], timeout, inp=prompt, cwd=HOME_CFG)
+    try: ans = open(of, encoding="utf-8", errors="replace").read().strip()
+    except Exception: ans = ""
+    try: os.remove(of)
+    except Exception: pass
+    if rc == 0 and ans: return True, ans
+    return False, ("Codex ما رد خلال %d دقايق" % max(1, timeout // 60)) if rc == -1 else codex_why(txt, rc)["msg"]
+def codex_skill_state():
+    d = codex_skill_dir(); vf = J(d, "VERSION"); ins = os.path.isfile(J(d, "SKILL.md"))
+    try: v = open(vf, encoding="utf-8").read().strip() if os.path.isfile(vf) else ""
+    except Exception: v = ""
+    return {"installed": ins, "version": v, "current": VERSION, "fresh": bool(ins and v == VERSION), "dir": d, "linked": bool(codex_cfg().get("linked"))}
+def codex_auth(fresh=False):
+    """Codex مثبّت ومسجّل دخول؟ (codex login status: ما يصرف من حدّك) والسكل داخله بأي نسخة."""
+    if fresh or not _CXA["v"] or time.time() - _CXA["t"] >= 45:
+        exe = find_codex(bool(fresh)); out = {"found": bool(exe), "path": exe or "", "loggedIn": None, "method": "", "version": ""}
+        if exe:
+            rc, txt = _cx_run(exe, ["login", "status"], 25); low = txt.lower()
+            if re.search(r"not (logged|signed) in", low): out["loggedIn"] = False
+            elif "logged in" in low: out.update(loggedIn=True, method="ChatGPT" if "chatgpt" in low else ("API key" if "api key" in low else ""))
+            rc, txt = _cx_run(exe, ["--version"], 15); m = re.search(r"\d+\.\d+[0-9A-Za-z.\-]*", txt or ""); out["version"] = m.group(0) if m else ""
+        _CXA.update(t=time.time(), v=out)
+    return dict(_CXA["v"], skill=codex_skill_state(), agent=agent_pref(), using=agent_pick()[0])
+def _term_open(win, nix):
+    try:
+        if os.name == "nt": subprocess.Popen(win, shell=True)
+        elif sys.platform == "darwin": subprocess.Popen(["osascript", "-e", 'tell application "Terminal" to do script "%s"' % nix.replace('"', '\\"'), "-e", 'tell application "Terminal" to activate'])
+        else:
+            tm = next((x for x in ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm") if shutil.which(x)), None)
+            if not tm: return False, "افتح الطرفية واكتب: " + nix
+            subprocess.Popen([tm, "-e", "bash", "-lc", nix + "; exec bash"])
+    except Exception as e: return False, "ما قدرت أفتح النافذة: %s. افتح الطرفية واكتب: %s" % (str(e)[:120], nix)
+    return True, ""
+def codex_term(kind):
+    """install = صفحة Codex الرسمية بمتصفحك (تثبّته أنت بنفسك)، login = نافذة طرفية تسجّل فيها بحساب ChatGPT."""
+    _CXA["t"] = 0
+    if kind == "install":
+        try: import webbrowser; webbrowser.open("https://developers.openai.com/codex"); return True, ""
+        except Exception: return False, "افتح developers.openai.com/codex وثبّته من هناك"
+    exe = find_codex(True)
+    if not exe: return False, "ثبّت Codex أول"
+    return _term_open('start "Codex" "%s" login' % exe, '"%s" login' % exe)
+CX_NOTE = ("\n> **شغّال من Codex:** مجلد السكل `<skill>` = `%s`، و`hs` = `python \"%s\"`. "
+           "التعليمات تحت مكتوبة لـ Claude Code وأنت تسويها نفسها: اللي يقول «Claude» يقصدك. أسئلة المونتاج بصفحة الأسئلة بالاستوديو مثل العادة. "
+           "ما عندك Claude in Chrome: التوليد والنشر من متصفحه يسويها هو بنفسه أو من Claude Code، ولو عندك أداة صور من حسابه في ChatGPT استأذنه قبل لأنها تصرف من حدّه. "
+           "مشاريعه وإعداداته في `~/.hojas-studio` نفسها اللي يستخدمها Claude.\n")
+CX_YAML = ('interface:\n  display_name: "Hojas Studio"\n  short_description: "مونتاج مقاطع الكلام بالكابشن العربي والاستوديو"\n'
+           '  icon_small: "./hub-icon.png"\n  icon_large: "./hub-icon.png"\n  brand_color: "#D97757"\n'
+           '  default_prompt: "Use $hojas-studio to edit my talking-head clip with Arabic captions."\n')
+CX_SKIP = {"docs", "site", "_backup", "videos", "skills", ".claude-plugin", "hooks", "graphify-out", "remotion-demo", "studio-demo", "stills", "ve-work", "video-edit", "publish-private.md"}
+def codex_skill_text():
+    src = open(J(HERE, "SKILL.md"), encoding="utf-8").read(); fm, body = src.split("\n---\n", 1); d = codex_skill_dir()
+    body = body.replace("تحت: `hs` = `python <skill>/hs.py`.", "تحت: `hs` = `python \"%s\"`." % J(d, "hs.py"), 1)
+    return fm + "\n---\n" + CX_NOTE % (d, J(d, "hs.py")) + body
+def _cx_backup(d, mark):
+    st = codex_skill_state(); root = J(HOME_CFG, "backup") if mark else J(codex_home(), "hs-backup")
+    bk = J(root, "codex-skill-%s-%s" % (st["version"] or "old", time.strftime("%Y%m%d-%H%M%S"))); os.makedirs(root, exist_ok=True)
+    try: shutil.move(d, bk)
+    except Exception: shutil.copytree(d, bk, dirs_exist_ok=True)   # Codex فاتح ملف منه: ننسخ بدل ما ننقل
+    for x in sorted(glob.glob(J(root, "codex-skill-*")))[:-3]: shutil.rmtree(x, ignore_errors=True)
+    return bk
+def codex_skill_sync(mark=True):
+    """ينسخ السكل لـ Codex (~/.codex/skills/hojas-studio) مع ملاحظة إنه شغّال من Codex. اللي كان هناك ينحفظ قبل في ~/.hojas-studio/backup."""
+    dst = codex_skill_dir()
+    if os.path.normcase(os.path.abspath(dst)) == os.path.normcase(os.path.abspath(HERE)): return True, "السكل شغّال من Codex نفسه"
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.isdir(dst): _cx_backup(dst, mark)
+        def ign(d, names):
+            top = os.path.normcase(os.path.abspath(d)) == os.path.normcase(os.path.abspath(HERE))
+            return [n for n in names if n in ("__pycache__", ".git", "node_modules", "video-edit") or n.endswith((".pyc", ".log")) or (top and n in CX_SKIP)]
+        shutil.copytree(HERE, dst, ignore=ign, dirs_exist_ok=True)
+        open(J(dst, "SKILL.md"), "w", encoding="utf-8", newline="").write(codex_skill_text())
+        os.makedirs(J(dst, "agents"), exist_ok=True); open(J(dst, "agents", "openai.yaml"), "w", encoding="utf-8", newline="").write(CX_YAML)
+        if mark: c = codex_cfg(); c.update(linked=True, version=VERSION, at=int(time.time())); os.makedirs(HOME_CFG, exist_ok=True); wj(codex_cfg_path(), c)
+    except Exception as e: return False, "ما قدرت أنسخ السكل لـ Codex: %s" % str(e)[:200]
+    _CXA["t"] = 0; return True, "السكل صار داخل Codex (نسخة %s). افتح Codex من جديد عشان يشوفه." % VERSION
+def codex_unlink():
+    d = codex_skill_dir(); c = codex_cfg(); c["linked"] = False; os.makedirs(HOME_CFG, exist_ok=True); wj(codex_cfg_path(), c); bk = ""
+    h = hub_cfg()
+    if h.get("agent") == "codex": h["agent"] = "claude"; wj(hub_cfg_path(), h)
+    if os.path.isdir(d) and os.path.normcase(os.path.abspath(d)) != os.path.normcase(os.path.abspath(HERE)):
+        try: bk = _cx_backup(d, True)
+        except Exception as e: return False, "ما قدرت أشيله: %s" % str(e)[:160]
+    _CXA["t"] = 0; return True, ("شلت السكل من Codex، ونسخته محفوظة في %s." % bk) if bk else "انشال الربط."
+def cmd_codex(args):
+    """hs codex                  حالة Codex والسكل داخله
+hs codex link             ينسخ السكل لـ Codex (~/.codex/skills/hojas-studio) والقديم ينحفظ
+hs codex unlink           يشيله (نسخته تنحفظ)
+hs codex use claude|codex مين يشغّل أزرار المساعد
+hs codex refresh          يحدّث نسخة Codex لو ربطتها وصارت أقدم"""
+    sub = args[0] if args else "status"
+    if sub == "link": ok, msg = codex_skill_sync(); print(msg); sys.exit(0 if ok else 1)
+    if sub == "unlink": ok, msg = codex_unlink(); print(msg); sys.exit(0 if ok else 1)
+    if sub == "refresh":
+        st = codex_skill_state()
+        if st["linked"] and not st["fresh"]: print(codex_skill_sync()[1])
+        return
+    if sub == "use":
+        ag = args[1] if len(args) > 1 else ""
+        if ag not in AGENTS: sys.exit("hs codex use claude|codex")
+        if ag == "codex" and not find_codex(True): sys.exit("ما لقيت Codex على الجهاز")
+        c = hub_cfg(); c["agent"] = ag; os.makedirs(HOME_CFG, exist_ok=True); wj(hub_cfg_path(), c); print("أزرار المساعد صارت تشتغل على " + agent_name(ag)); return
+    if sub not in ("status", "where"): sys.exit(cmd_codex.__doc__)
+    a = codex_auth(True); sk = a["skill"]
+    print("Codex:", a["path"] or "مو مثبّت (developers.openai.com/codex)", ("· " + a["version"]) if a["version"] else "")
+    print("الدخول:", {True: "مسجّل (%s)" % (a["method"] or "ChatGPT"), False: "مو مسجّل، شغّل: codex login", None: "ما عرفت"}[a["loggedIn"]])
+    print("السكل داخل Codex:", (sk["version"] + ("" if sk["fresh"] else " (أقدم من %s، شغّل: hs codex link)" % VERSION)) if sk["installed"] else "مو مربوط، شغّل: hs codex link")
+    print("أزرار المساعد:", agent_name(a["using"]))
 def pid_alive(pid):
     """4.44: هل العملية لسه شغالة؟ (ويندوز: OpenProcess، لأن os.kill هناك يقفلها بدل ما يفحصها)"""
     try: pid = int(pid)
@@ -7563,17 +10080,23 @@ def claude_stale(work, jb=None):
     lg = J(work, "claude.log"); ref = os.path.getmtime(lg) if os.path.exists(lg) else float(jb.get("at") or jb.get("t0") or 0)
     return time.time() - ref > CL_IDLE
 def claude_spawn(work, task, label="طلب", on_done=None, on_fail=None):
-    exe = find_claude()
+    kind, exe = agent_pick()
+    if kind not in AGENTS: exe = None
     task = lang_hint(task.replace("<engine>", find_engine(None) or "engine") + '\n\n(سياق: `hs` = `"%s" "%s"` · السكل: %s)' % (PY, os.path.abspath(__file__), HERE))
     if not exe: return False, "ما لقيت Claude Code على الجهاز. افتح Claude Code مرة وحدة (عشان أعرف مكانه) أو قل له: " + task[:200]
-    cmd = [exe, "-p", task, "--permission-mode", "acceptEdits", "--add-dir", HERE, "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep"]
-    if exe.lower().endswith((".cmd", ".bat")): cmd = ["cmd", "/c"] + cmd
+    cx = kind == "codex"; why_ = codex_why if cx else claude_why   # 4.61: Codex ياخذ الطلب من stdin
+    if cx: cmd = codex_exec_argv(exe, work, cx_dirs(find_engine(None)))
+    else:
+        cmd = [exe, "-p", task, "--permission-mode", "acceptEdits", "--add-dir", HERE, "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep"]
+        if exe.lower().endswith((".cmd", ".bat")): cmd = ["cmd", "/c"] + cmd
     lg = J(work, "claude.log")
     try: off = os.path.getsize(lg)
     except OSError: off = 0
-    kw = {"cwd": work, "stdin": subprocess.DEVNULL, "stdout": open(lg, "ab"), "stderr": subprocess.STDOUT}
+    kw = {"cwd": work, "stdin": subprocess.PIPE if cx else subprocess.DEVNULL, "stdout": open(lg, "ab"), "stderr": subprocess.STDOUT}
     if os.name == "nt": kw["creationflags"] = 0x08000000
-    try: pr = subprocess.Popen(cmd, **kw); cid = cmd_log_add(work, label, task, None); t0 = time.time()
+    try:
+        pr = subprocess.Popen(cmd, **kw); cid = cmd_log_add(work, label, task, None); t0 = time.time()
+        if cx: pr.stdin.write(task.encode("utf-8")); pr.stdin.close()
     except Exception as e: return False, str(e)[:200]
     cmd_log_set(cid, pid=pr.pid)
     if os.path.exists(job_path(work)):
@@ -7584,9 +10107,9 @@ def claude_spawn(work, task, label="طلب", on_done=None, on_fail=None):
         try:
             with open(lg, "rb") as f: f.seek(off); out = f.read().decode("utf-8", "replace")
         except Exception: out = ""
-        bad = rc != 0 or (time.time() - t0 < 180 and len(out) < 3000 and claude_why(out)["why"] in ("limit", "login", "credit"))
+        bad = rc != 0 or (time.time() - t0 < 180 and len(out) < 3000 and why_(out)["why"] in ("limit", "login", "credit"))
         if bad:
-            w = claude_why(out, rc); cmd_log_set(cid, status="err", result=w["msg"], why=w["why"])
+            w = why_(out, rc); cmd_log_set(cid, status="err", result=w["msg"], why=w["why"])
             try: say(work, w["msg"], "err")
             except Exception: pass
             try: job_set(work, claudeErr=w["msg"], why=w["why"], ranking=False)
@@ -8135,6 +10658,9 @@ def ep_study_text(d, n=5, ln=None):
             "- كل لقطة فكرة كاملة تنفهم لحالها بدون سياق: بداية واضحة ونهاية تقفل الفكرة، ما تبدأ بنص جملة ولا تنقطع قبل الخلاصة.\n"
             "- تبدأ بهوك بأول 3 ثواني (سؤال، رقم، رأي جريء، قصة، موقف)، وطولها حسب المطلوب %s ثانية.\n"
             "- لا ترشّح السلام والمقدمات والكلام العام والإعلانات والتكرار.\n"
+            "- تنفهم بدون اللي قبلها: لو أولها «هو/هذا/زي ما قلت» يرجع لشي قبله، ارجع لبداية الفكرة أو شيلها.\n"
+            "- الفايدة أو الجواب يجي بأول 5 ثواني من اللقطة، والنهاية على جملة تقفل الفكرة مو على سكتة أو «يعني».\n"
+            "- لو فيها مفهوم يحتاج رسم يوضحه (مقارنة، أرقام، خطوات، تشبيه)، اكتب بالسبب «سبورة: وش ترسم» عشان ينرسم لها شرح (engine/references/board.md).\n"
             "- شيل المرشّحات الضعيفة (hs clips cand %s rm <id>)، وعدّل الباقية (cand set <id> --from --to --title --hook --score --why \"سبب|سبب\")، وأضف اللحظات القوية اللي فاتت (cand add).\n"
             "- الدرجة (0-100) حقيقية: كم تتوقع تضرب كمقطع قصير. العنوان قصير يشد، والهوك أول جملة تنقال.\n"
             "خلّ أقوى %d مرشّح على الأقل.") % (ln or "25-75", d, int(n or 5) * 2)
@@ -8869,6 +11395,10 @@ def cmd_sync(args):
     if "--now" not in args:
         try: claude_learn()   # 4.4.1: المكتبة تعرف وين Claude حتى لو اشتغلت مع ويندوز بدون PATH
         except Exception: pass
+    try:   # 4.61: نسخة السكل داخل Codex تتحدّث مع البلقن لو ربطتها
+        st_ = codex_skill_state()
+        if st_["linked"] and st_["installed"] and not st_["fresh"] and "--now" not in args: spawn_bg(["codex", "refresh"], os.path.join(HOME_CFG, "codex.log"))
+    except Exception: pass
     port = hub_cfg().get("port") or HUB_PORT; pg = hub_ping(port)
     if pg and (pg.get("version") != VERSION or os.path.normcase(pg.get("root") or "") != os.path.normcase(HERE)):
         if "--now" not in args:   # لا نأخّر بداية الجلسة: نكمّل بالخلفية
@@ -9145,7 +11675,7 @@ def hub_serve(root, port):
             if a == "projects":
                 cards = [proj_card(w, live=True) for w in hub_projects(root)]; cards.sort(key=lambda c: -c["mt"])
                 eps = hub_eps(root); eps.sort(key=lambda c: -c["mt"])
-                return self._json(200, {"root": root, "projects": cards, "eps": eps, "folders": folders_load(), "awake": AWAKE["on"], "battery": battery(), "ytdlp": bool(ytdlp_cmd()), "claude": have_claude(), "claudeErr": claude_last_err(), "tokenAsk": token_ask(), "factory": factory_state()})
+                return self._json(200, {"root": root, "projects": cards, "eps": eps, "folders": folders_load(), "awake": AWAKE["on"], "battery": battery(), "ytdlp": bool(ytdlp_cmd()), "claude": have_claude(), "agent": agent_pick()[0], "claudeErr": claude_last_err(), "tokenAsk": token_ask(), "factory": factory_state()})
             if a == "search":
                 qq = (q.get("q") or [""])[0].strip()
                 if len(qq) < 2: return self._json(200, {"q": qq, "items": []})
@@ -9247,24 +11777,44 @@ def hub_serve(root, port):
             if a == "script_del":
                 L = [x for x in rj(scripts_path(), []) or [] if x["id"] != data.get("id")]; wj(scripts_path(), L); return self._json(200, {"ok": True, "items": L})
             if a == "script_ai":   # اختياري ويستهلك: Claude يكتب السكربت
-                v = find_claude()
-                if not v: return self._json(200, {"ok": False, "msg": "ما لقيت Claude Code على الجهاز"})
+                v = find_claude(); cx_ = agent_pick()[0] == "codex"   # 4.61
+                if not v and not cx_: return self._json(200, {"ok": False, "msg": "ما لقيت Claude Code على الجهاز"})
                 topic = str(data.get("topic") or "")[:800]; secs = int(data.get("secs") or 45)
-                pr = ("اكتب سكربت مقطع قصير (talking head) بلهجة سعودية بيضاء عن: %s. مدته تقريباً %d ثانية (حوالي %d كلمة). أول جملة هوك قوي (سؤال أو رقم أو جملة صادمة)، "
-                      "جمل قصيرة سهلة تنقال، وآخر جملة تطلب شي (تابع أو احفظ). اكتب السكربت فقط بدون عناوين أو شرح." % (topic, secs, int(secs * 2.3)))
+                pr = ("اكتب سكربت مقطع قصير (talking head) بلهجة سعودية بيضاء عن: %s. مدته تقريباً %d ثانية (حوالي %d كلمة). أول جملة هوك قوي (سؤال أو رقم أو النتيجة نفسها) والفايدة قبل الثانية 5، "
+                      "فكرة وحدة بس، ومثال أو تشبيه من حياة الناس اليومية يوضحها، وكل معلومة صحيحة (لو المثال للتوضيح قلها). جمل قصيرة سهلة تنقال. "
+                      "آخر جملة كلمة دعوة وحدة واضحة. بعد السكربت سطر فاضي ثم «سبورة:» وتحتها الجمل اللي تحتاج رسم يوضحها ووش ترسم (سطر لكل وحدة، بالكثير 4). اكتب السكربت فقط بدون عناوين ثانية." % (topic, secs, int(secs * 2.3)))
+                def sc_split(o_):   # 4.70: «سبورة:» اقتراحات للرسم، مو كلام ينقرى بالملقّن
+                    m_ = re.split(r"\n\s*«?سبورة»?\s*:\s*\n?", o_, maxsplit=1); return {"ok": True, "text": m_[0].strip(), "board": m_[1].strip() if len(m_) > 1 else ""}
+                if cx_: ok, ans = codex_once(pr, 180); return self._json(200, sc_split(ans) if ok else {"ok": False, "msg": ans})
                 cmd = (["cmd", "/c"] if v.lower().endswith((".cmd", ".bat")) else []) + [v, "-p", pr]
                 kw = {"creationflags": 0x08000000} if os.name == "nt" else {}
                 try: r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, stdin=subprocess.DEVNULL, cwd=HOME_CFG, **kw)
                 except subprocess.TimeoutExpired: return self._json(200, {"ok": False, "msg": "Claude ما رد خلال 3 دقايق"})
                 out = (r.stdout or "").strip()
                 if r.returncode != 0 or not out or claude_why(out)["why"] in ("limit", "login", "credit"): return self._json(200, {"ok": False, "msg": claude_why(out + (r.stderr or ""), r.returncode)["msg"]})
-                return self._json(200, {"ok": True, "text": out})
+                return self._json(200, sc_split(out))
             if a == "cpu":   # 4.4.1: خفيف على الجهاز / أقصى سرعة
                 m = data.get("mode")
                 if data.get("probe"): whisper_device()
                 if m in CPU_MODES: c = hub_cfg(); c["cpu"] = m; wj(hub_cfg_path(), c); lighten(m)
                 return self._json(200, {"ok": True, "cpu": cpu_mode(), "whisper": whisper_device()})
             if a == "claude_auth": return self._json(200, claude_auth(bool(data.get("fresh"))))   # 4.51: «ربط Claude» بصفحة الجهاز
+            if a == "codex_auth": return self._json(200, codex_auth(bool(data.get("fresh"))))   # 4.61: «ربط Codex» بالإعدادات
+            if a in ("codex_link", "codex_unlink", "codex_term", "agent_set"):
+                if not self._local(): return self._json(403, {"ok": False, "msg": "من جهازك بس"})
+                if a == "codex_link": ok, msg = codex_skill_sync()
+                elif a == "codex_unlink": ok, msg = codex_unlink()
+                elif a == "codex_term": ok, msg = codex_term("install" if data.get("kind") == "install" else "login")
+                else:
+                    ag = data.get("agent"); ok, msg = True, ""
+                    if ag not in AGENTS: ok, msg = False, "اختر Claude أو Codex"
+                    elif ag == "codex" and not find_codex(True): ok, msg = False, "ثبّت Codex أول"
+                    else: c = hub_cfg(); c["agent"] = ag; wj(hub_cfg_path(), c)
+                return self._json(200, {"ok": ok, "msg": msg, "cx": codex_auth(), "agent": agent_pick()[0], "claude": have_claude()})
+            if a == "codex_test":   # 4.61
+                ok, ans = codex_once("Reply with the single word: ok", 120); good = ok and "ok" in ans.lower()
+                if good: cmd_log_clear_err()
+                return self._json(200, {"ok": good, "msg": "Codex شغّال ويرد." if good else ans})
             if a == "conns": return self._json(200, {"mcp": mcp_list(bool(data.get("fresh"))), "apis": api_list()})   # 4.55: الاتصالات بالإعدادات
             if a in ("mcp_add", "mcp_rm", "api_add", "api_rm"):
                 if not self._local(): return self._json(403, {"ok": False, "msg": "من جهازك بس"})
@@ -9273,6 +11823,11 @@ def hub_serve(root, port):
             if a == "claude_term":
                 if not self._local(): return self._json(403, {"ok": False, "msg": "من جهازك بس"})
                 ok, msg = claude_term("install" if data.get("kind") == "install" else "login"); return self._json(200, {"ok": ok, "msg": msg})
+            if a == "claude_check" and agent_pick()[0] == "codex":   # 4.61: المساعد على Codex
+                if not data.get("test"): v = find_codex(True); return self._json(200, {"ok": bool(v), "path": v or "", "msg": "" if v else "ما لقيت Codex على الجهاز"})
+                ok, ans = codex_once("Reply with the single word: ok", 90); good = ok and "ok" in ans.lower()
+                if good: cmd_log_clear_err()
+                return self._json(200, {"ok": good, "msg": "Codex شغّال ويرد." if good else ans})
             if a == "claude_check":   # 4.4.1: «دوّر مرة ثانية» و«جرّب Claude»
                 v = find_claude(True)
                 if not v or not data.get("test"): return self._json(200, {"ok": bool(v), "path": v or "", "msg": "" if v else "ما لقيت Claude Code. افتح Claude Code مرة وحدة وأرجع اضغط «دوّر»، أو ثبّته من claude.com/claude-code"})
@@ -9470,6 +12025,7 @@ def hub_serve(root, port):
                         f.write(ch); left -= len(ch)
                 note = (q.get("note") or [""])[0][:1500]; mode = (q.get("mode") or ["clips" if kind == "long" else "manual"])[0]
                 idq = (q.get("identity") or [""])[0][:40]
+                if mode0 != "clips" and (q.get("canvas") or [""])[0] == "16:9": canvas_set(w, "16:9")   # 4.60: مشروع عرضي (يوتيوب)
                 if mode0 != "clips" and ((q.get("grade") or [""])[0] or (q.get("lut") or [""])[0] or (q.get("log") or ["0"])[0] == "1"):   # 4.43: الألوان من النافذة
                     color_set(w, (q.get("grade") or ["none"])[0], (q.get("log") or ["0"])[0] == "1", (q.get("lut") or [""])[0])
                 pod_want(w, {"mode": mode, "tr": (q.get("tr") or [""])[0], "dub": (q.get("dub") or [""])[0], "host": (q.get("host") or ["1"])[0], "identity": idq, "speaker": (q.get("speaker") or [""])[0][:40], "study": (q.get("study") or [""])[0]})
@@ -9514,7 +12070,7 @@ def main():
     if os.environ.get("CLAUDECODE") and cmd != "claude":   # Claude نفسه شغّل hs: نحفظ مكانه للمكتبة (لو ما هو بالـ PATH نلقاه من العملية الأم)
         try: claude_learn()
         except Exception: pass
-    if cmd not in ("sync", "claude", "db", "tools", "platform", "release", "autoupdate", "selftest"): lighten()
+    if cmd not in ("sync", "claude", "codex", "db", "tools", "platform", "release", "autoupdate", "selftest"): lighten()
     if cmd == "doctor": sys.exit(0 if cmd_doctor(engine) else 1)
     if cmd == "platform": return cmd_platform(a[1:])
     if cmd == "tools": print(tools_text()); return
@@ -9531,6 +12087,7 @@ def main():
     if cmd == "db": return cmd_db(a[1:])
     if cmd == "sync": return cmd_sync(a[1:])
     if cmd == "claude": return cmd_claude(a[1:])
+    if cmd == "codex": return cmd_codex(a[1:])   # 4.61
     if cmd == "release": return cmd_release(a[1:])
     if cmd == "progress": return cmd_progress(a[1:])
     if cmd == "apigen": return cmd_apigen(a[1:])
@@ -9601,6 +12158,13 @@ def main():
     elif cmd == "sfx": cmd_sfx(work, rest)
     elif cmd == "bleep": cmd_bleep(work, rest)
     elif cmd == "emoji": cmd_emoji(work, rest)   # 4.48
+    elif cmd == "wave": cmd_wave(work, rest)   # 4.57
+    elif cmd == "speed": cmd_speed(work, rest)   # 4.59
+    elif cmd == "canvas": cmd_canvas(work, rest)   # 4.60
+    elif cmd == "board": cmd_board(work, rest)   # 4.70
+    elif cmd == "color": cmd_color(work, rest)   # 4.64
+    elif cmd == "blur": cmd_blur(work, rest)   # 4.69: طمس الوجوه
+    elif cmd == "angle": cmd_angle(work, rest)   # 4.58
     elif cmd == "face":
         try: os.remove(J(work, "face.json"))
         except OSError: pass

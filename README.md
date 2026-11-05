@@ -12,7 +12,7 @@
 
 <p align="center">
   <img alt="Claude Code skill" src="docs/assets/badge-skill.svg">
-  <img alt="Version 4.56" src="docs/assets/badge-version.svg">
+  <img alt="Version 4.70" src="docs/assets/badge-version.svg">
   <img alt="Runs on Windows, macOS, Linux" src="docs/assets/badge-platforms.svg">
   <img alt="License: PolyForm Noncommercial" src="docs/assets/badge-license.svg">
 </p>
@@ -22,6 +22,12 @@
 Give Claude a clip. It cuts the silences, transcribes every word, writes word-timed Arabic captions, asks you a few questions on a page (platform, aspect ratio, caption style), designs explainer cards, adds b-roll and sound, and opens the result on a timeline where you change anything you want before exporting. Then it pings your phone with the finished clip, and can post it to TikTok from your own browser once you say yes.
 
 Everything runs on your computer. No API keys, no uploads.
+
+### New in 4.70: the chalkboard
+
+Talk about an idea and Claude turns it into an animated chalkboard explainer on top of your clip: each word is chalked in the moment you say it, drawings draw themselves stroke by stroke, and 32 characters, 43 icons and real taped photos make the point. Full screen, on top with you below, or as a card over the real app on screen. Claude picks the moments that need explaining and checks that nothing overlaps.
+
+<img src="docs/assets/board.jpg" alt="A chalkboard explainer drawn by Claude over a screen recording" width="100%">
 
 <table>
 <tr>

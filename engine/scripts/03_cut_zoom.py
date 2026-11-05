@@ -50,6 +50,10 @@ MINHOLD=4.0 if CALM else 0.0
 try: _FR=(json.load(open(os.path.join(W,"studio.json"))).get("hs") or {}).get("vpos") or {}
 except Exception: _FR={}
 FZ=max(1.0,min(3.0,float(_FR.get("z") or 1.0))); FX=_FR.get("x")
+# 4.60: مقاس المشروع: عمودي 1080×1920 أو عرضي 1920×1080 (يوتيوب)
+try: _CV=(json.load(open(os.path.join(W,"studio.json"))).get("hs") or {}).get("canvas")
+except Exception: _CV=None
+TW,TH=(1920,1080) if _CV=="16:9" else (1080,1920)
 if _FR.get("still"): Z=[1.00]
 if _FR.get("y") is not None: ANCH=max(0.0,min(1.0,float(_FR["y"])))
 print("الإيقاع:", "هادي (زوم أخف · لا تغيير قبل 4 ثوانٍ)" if CALM else "عادي")
@@ -57,7 +61,7 @@ p=subprocess.run(["ffprobe","-v","error","-select_streams","v:0","-show_entries"
    "stream=width,height","-of","csv=p=0:s=x",SRC],capture_output=True,text=True).stdout.strip()
 SW,SH=[int(x) for x in p.split("x")[:2]]
 # 4.5: فيديو عرضي (بودكاست/مقابلة): نقص عمودي 9:16 على اللي يتكلم بدل ما نمطّ الصورة. 22_reframe.py يحسب المكان.
-WIDE=SW/max(1,SH)>0.75
+WIDE=SW/max(1,SH)>0.75 and TH>TW   # بالعرضي ما نقص عمودي
 RK=[]
 if WIDE:
     _rp=os.path.join(W,"reframe.json")
@@ -90,12 +94,17 @@ for i,(s,e) in enumerate(k):
         bw=SH*9/16; cw=int(bw/(z*FZ))//2*2; ch=int(SH/(z*FZ))//2*2
         _c=float(FX) if FX is not None else _cx((s+e)/2)
         x=int(max(0,min(SW-cw,_c*SW-cw/2)))//2*2; y=int((SH-ch)*ANCH)
+    elif TW>TH:   # 4.60: عرضي: نقص بنسبة 16:9 من الأصل (لو الأصل عمودي ياخذ الجزء اللي فيه الوجه)
+        _A=TW/TH
+        if SW/SH>=_A: ch=int(SH/(z*FZ))//2*2; cw=int(ch*_A)//2*2
+        else: cw=int(SW/(z*FZ))//2*2; ch=int(cw/_A)//2*2
+        x=int(max(0,min(SW-cw,(float(FX) if FX is not None else 0.5)*SW-cw/2)))//2*2; y=int((SH-ch)*ANCH)
     else:
         cw=int(SW/(z*FZ))//2*2; ch=int(SH/(z*FZ))//2*2
         x=int(max(0,min(SW-cw,(float(FX) if FX is not None else 0.5)*SW-cw/2)))//2*2; y=int((SH-ch)*ANCH)
     _h=0.5/float(_F)   # نص فريم قبل الحد: كل جزء ياخذ فريماته بالضبط مهما كان تقريب الأرقام
     fc.append(f"[0:v]trim=start={max(0.0,s-_h):.6f}:end={e-_h:.6f},setpts=PTS-STARTPTS,crop={cw}:{ch}:{x}:{y},"
-              f"scale=1080:1920:flags=lanczos,setsar=1[v{i}]")
+              f"scale={TW}:{TH}:flags=lanczos,setsar=1[v{i}]")
     # تلاشي 12 جزء من الثانية أول وآخر كل لقطة: بدونه يطلع «تك» أو قطع بالصوت عند كل قصة
     _d=max(0.0,(e-s)-0.012)
     fc.append(f"[0:a]atrim=start={s:.6f}:end={e:.6f},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.012,afade=t=out:st={_d:.4f}:d=0.012[a{i}]")

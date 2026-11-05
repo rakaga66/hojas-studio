@@ -76,15 +76,15 @@ NAMES = {
     "يوتيوب": "YouTube", "تيك توك": "TikTok", "تيكتوك": "TikTok", "انستقرام": "Instagram", "انستغرام": "Instagram", "انستا": "Instagram",
     "سناب شات": "Snapchat", "سناب": "Snapchat", "تويتر": "Twitter", "واتساب": "WhatsApp", "واتس اب": "WhatsApp", "تيليجرام": "Telegram", "تلقرام": "Telegram",
     "ميتا": "Meta", "فيسبوك": "Facebook", "لينكدان": "LinkedIn", "لينكد ان": "LinkedIn", "مايكروسوفت": "Microsoft", "كوبايلوت": "Copilot",
-    "ابل": "Apple", "ايفون": "iPhone", "ايباد": "iPad", "ماك بوك": "MacBook", "سامسونج": "Samsung", "نتفلكس": "Netflix", "امازون": "Amazon",
+    "ايفون": "iPhone", "ايباد": "iPad", "ماك بوك": "MacBook", "سامسونج": "Samsung", "نتفلكس": "Netflix", "امازون": "Amazon",
     "تسلا": "Tesla", "انفيديا": "Nvidia", "اكس اي": "xAI", "جروك": "Grok", "قروك": "Grok", "ديب سيك": "DeepSeek", "بيربلكسيتي": "Perplexity",
     "ميسترال": "Mistral", "ميدجورني": "Midjourney", "هيقزفيلد": "Higgsfield", "هيغزفيلد": "Higgsfield", "رن واي": "Runway", "ران واي": "Runway",
     "كلينق": "Kling", "كلينج": "Kling", "اليفن لابز": "ElevenLabs", "كانفا": "Canva", "نوشن": "Notion", "فيقما": "Figma", "فيجما": "Figma",
     "كاب كت": "CapCut", "كابكت": "CapCut", "فاينل كت": "Final Cut", "بريمير": "Premiere", "افتر افكتس": "After Effects", "افتر افكت": "After Effects",
-    "فوتوشوب": "Photoshop", "اليستريتر": "Illustrator", "اكسل": "Excel", "باوربوينت": "PowerPoint", "سلاك": "Slack", "زابير": "Zapier",
+    "فوتوشوب": "Photoshop", "اليستريتر": "Illustrator", "باوربوينت": "PowerPoint", "سلاك": "Slack", "زابير": "Zapier",
     "جيت هب": "GitHub", "قيت هب": "GitHub", "كيرسر": "Cursor", "كيرسور": "Cursor", "ريبليت": "Replit", "لوفابل": "Lovable", "فيرسل": "Vercel",
     "سوبابيس": "Supabase", "نتلايفي": "Netlify", "بايثون": "Python", "جافاسكربت": "JavaScript", "رياكت": "React", "انتي جرافيتي": "Antigravity",
-    "شوبيفاي": "Shopify", "سلة": "Salla", "زد": "Zid", "سبوتيفاي": "Spotify", "ديسكورد": "Discord", "ريديت": "Reddit", "بنترست": "Pinterest",
+    "شوبيفاي": "Shopify", "سلة ستور": "Salla", "منصة زد": "Zid", "سبوتيفاي": "Spotify", "ديسكورد": "Discord", "ريديت": "Reddit", "بنترست": "Pinterest",
     "ايفل": "Eiffel", "برج ايفل": "Eiffel Tower", "تايمز سكوير": "Times Square", "بيق بن": "Big Ben", "هوليوود": "Hollywood", "سيليكون فالي": "Silicon Valley",
 }
 _PRE = ("وبال", "فبال", "وال", "بال", "فال", "كال", "لل", "ال", "و", "ب", "ل", "ف", "ك")

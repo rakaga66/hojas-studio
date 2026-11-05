@@ -251,3 +251,5 @@ html { scroll-behavior: smooth; }
 .upd-note { font-size: 13px; }
 .upd-x { position: absolute; top: 10px; left: 10px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); font-size: 22px; line-height: 1; cursor: pointer; color: var(--ink); }
 .upd-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.upd .btn-ghost { color: var(--ink); border-color: var(--line); background: transparent; }
+.upd .btn-ghost:hover { border-color: var(--ink); }

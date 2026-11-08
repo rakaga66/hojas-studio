@@ -3,7 +3,7 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/bin/hs\" sync", "timeout": 20 }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/cli/hs\" sync", "timeout": 20 }
         ]
       }
     ]

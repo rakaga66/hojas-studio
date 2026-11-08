@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Hojas Studio: يشغّل hs.py من البلقن.
+# 4.70.1: كان بمجلد bin/، وclaude.ai يرفض أي بلقن فيه bin/ («Marketplace sync failed»).
+# الحين مكانه cli/، وهوك بداية الجلسة (hs sync) يحطه على PATH عن طريق CLAUDE_ENV_FILE، فالأمر hs يبقى جاهز.
+D="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ "$1" = "sync" ] && [ -n "$CLAUDE_ENV_FILE" ]; then
+  L="export PATH=\"$D/cli:\$PATH\""
+  grep -qxF "$L" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$L" >> "$CLAUDE_ENV_FILE"
+fi
+for P in python3 python py; do
+  if command -v "$P" >/dev/null 2>&1 && "$P" -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >/dev/null 2>&1; then
+    if [ "$P" = py ]; then exec py -3 "$D/hs.py" "$@"; else exec "$P" "$D/hs.py" "$@"; fi
+  fi
+done
+echo "Hojas Studio: Python 3 not found" >&2; exit 0

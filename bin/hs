@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# Hojas Studio: يشغّل hs.py من البلقن (Claude Code يحط bin/ على PATH)
-D="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-for P in python3 python py; do
-  if command -v "$P" >/dev/null 2>&1 && "$P" -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >/dev/null 2>&1; then
-    if [ "$P" = py ]; then exec py -3 "$D/hs.py" "$@"; else exec "$P" "$D/hs.py" "$@"; fi
-  fi
-done
-echo "Hojas Studio: Python 3 not found" >&2; exit 0
